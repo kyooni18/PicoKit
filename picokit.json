@@ -1,0 +1,12 @@
+{
+  "board" : "pico2_w",
+  "configuration" : "release",
+  "openOCD" : "openocd",
+  "openOCDConfig" : [
+    "interface\/cmsis-dap.cfg",
+    "target\/rp2350.cfg"
+  ],
+  "firmwareDirectory" : "Firmware",
+  "product" : "Blink",
+  "uf2" : "Firmware\/build\/picokit-blink.uf2"
+}
