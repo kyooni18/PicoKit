@@ -74,8 +74,8 @@ and build artifacts do not get mixed into the utility kit:
 cd /path/to/PicoKit
 swift run picokit init --board pico2_w --name Blink
 cd ../Blink
-swift run --package-path ../PicoKit picokit build
-swift run --package-path ../PicoKit picokit flash
+./picokit build
+./picokit flash
 ```
 
 Use `--path` when you want a specific location:
@@ -87,7 +87,10 @@ swift run picokit init --board pico2_w --name Blink --path ~/PicoProjects/Blink
 The generated project contains `picokit.json`, `Sources/Blink/main.swift`, and
 an embedded Swift/CMake `Firmware` directory. Its configuration points at the
 shared Pico SDK in the PicoKit checkout, so the SDK is not copied into every
-project. `build` produces `Firmware/build/picokit-blink.uf2`; `flash` asks a
+project. It also includes an executable `./picokit` convenience runner. The
+CLI finds `picokit.json` from any child directory, so commands invoked by an
+editor terminal still use the enclosing project context. `build` produces
+`Firmware/build/picokit-blink.uf2`; `flash` asks a
 running firmware to reboot into BOOTSEL through USB, then copies the UF2. A
 manual BOOTSEL press is only needed if the board is not running PicoKit firmware
 with the USB reset interface enabled.
@@ -99,6 +102,7 @@ Example context:
   "board": "pico2_w",
   "firmwareDirectory": "Firmware",
   "picoSDKPath": "/path/to/PicoKit/Vendor/pico-sdk",
+  "picotool": "/path/to/PicoKit/Tools/picotool-build/picotool",
   "product": "Blink",
   "configuration": "release",
   "uf2": "Firmware/build/picokit-blink.uf2",
@@ -113,8 +117,9 @@ configures and streams a serial device:
 
 ```sh
 picokit debug
-picokit monitor --device /dev/cu.usbmodem1101 --baud 115200
-picokit list
+./picokit monitor                 # chooses the only detected Pico serial port
+./picokit monitor --device /dev/cu.usbmodem1101 --baud 115200
+./picokit list
 ```
 
 ## Verify
