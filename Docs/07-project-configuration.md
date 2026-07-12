@@ -17,7 +17,7 @@ SDK checkout:
   "configuration": "release",
   "firmwareDirectory": "Firmware",
   "picoKitURL": "https://github.com/kyooni18/PicoKit.git",
-  "picoKitBranch": "main",
+  "picoKitVersion": "0.1.0",
   "product": "Blink",
   "uf2": "Firmware/build/Blink.uf2",
   "openOCD": "openocd",
@@ -37,7 +37,7 @@ These are the supported fields when you do need to customize the setup:
 | `picoSDKPath` | Explicit Pico SDK path |
 | `picoKitPath` | Path to the reusable PicoKit checkout |
 | `picoKitURL` | SwiftPM URL used to resolve PicoKit |
-| `picoKitBranch` | SwiftPM branch used to resolve PicoKit |
+| `picoKitVersion` | SwiftPM release used to resolve PicoKit |
 | `picotool` | Optional `picotool` path |
 | `swiftSDK` | Embedded Swift SDK identifier for SwiftPM-based builds |
 | `product` | Firmware target and product name |

@@ -7,10 +7,10 @@ When you want a fresh firmware project rather than another in-tree example,
 start here:
 
 ```sh
-swift run swiftpico init --board pico2_w --name Blink --template blink
+swiftpico init --board pico2_w --name Blink --template blink
 ```
 
-`swiftpico init` creates a normal standalone Swift package that depends on
+Install SwiftPico first, then run `swiftpico init`. It creates a normal standalone Swift package that depends on
 `https://github.com/kyooni18/PicoKit.git`, writes the board-specific
 `swiftpico.json` configuration, and resolves the Pico SDK submodule required by
 the firmware build. Use `--skip-resolve` when creating an offline scaffold.
@@ -38,7 +38,7 @@ The options you will use most often are:
 --path PATH
 --force
 --pico-kit-url URL
---pico-kit-branch BRANCH
+--pico-kit-version VERSION
 --skip-resolve
 ```
 
