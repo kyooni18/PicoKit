@@ -2,8 +2,10 @@
 
 ## Chapter 33: High-level API
 
-The high-level API is for compact firmware sketches. It avoids `try`, optional
-unwrapping, and peripheral setup objects for GPIO, timing, and USB serial.
+The high-level API is the place to start when the firmware is a small sketch:
+an LED, a button, a sensor, and a serial log. It avoids `try`, optional
+unwrapping, and setup objects for GPIO, timing, and USB serial, so the important
+part of the loop stays easy to see.
 
 ```swift
 import PicoKit
@@ -26,7 +28,8 @@ struct Blink {
 
 ## Global sketch API
 
-Importing `PicoKit` provides a default `pico` runtime and these global helpers:
+Importing `PicoKit` gives you a default `pico` runtime and these global helpers.
+You do not need to create a controller just to turn a pin on:
 
 ```swift
 pinMode(15, .output)
@@ -47,7 +50,8 @@ block the calling core, so do not use them in interrupt handlers.
 ## Serial output
 
 `Serial` initializes USB stdio lazily on its first write. It is ready to use
-without a `begin`, constructor, or `try`:
+without a `begin`, constructor, or `try`, which makes it a good fit for bring-up
+messages:
 
 ```swift
 Serial.write("booting")
@@ -74,7 +78,7 @@ while true {
 
 Use `Pico` when a sketch should own its runtime explicitly or when GPIO needs
 to be substituted in a host test. The same non-throwing operations are
-available as instance methods.
+available as instance methods, and the code still reads like a sketch.
 
 ```swift
 let board = Pico()
@@ -110,7 +114,7 @@ assert(sketch.digitalRead(7) == .high)
 ## High-level versus low-level
 
 Use the high-level API when pins and hardware configuration are known to be
-valid at development time:
+valid at development time. This is the version you would normally write first:
 
 ```swift
 pinMode(15, .output)
@@ -119,7 +123,7 @@ sleep(100)
 ```
 
 Use low-level APIs when the application must handle invalid input or hardware
-failures itself:
+failures itself. It is more ceremony, but it gives the caller a real error path:
 
 ```swift
 let gpio = PicoGPIO(chip: .rp2040)
@@ -137,4 +141,6 @@ or an untrusted configuration file.
 
 The high-level API does not replace the specialized low-level APIs. Continue to
 use `BoardLED`, `PicoPWM`, `PicoADC`, `PicoUART`, `PicoI2C`, and `PicoSPI` when
-the sketch needs those peripherals.
+the sketch needs those peripherals. It is fine to mix the two styles: use
+`Serial.println` for logging while a dedicated `PicoI2C` instance talks to a
+sensor, for example.

@@ -3,7 +3,7 @@
 ## Chapter 9: Flashing
 
 
-Place the board into BOOTSEL mode, then run:
+Put the board in BOOTSEL mode (hold BOOTSEL while connecting it), then run:
 
 ```sh
 ./swiftpico flash
@@ -11,13 +11,15 @@ Place the board into BOOTSEL mode, then run:
 
 Aliases are `upload` and `f`.
 
-PicoKit searches for common mounted boot-volume names, including RP2040 and RP2350 volumes. Explicit paths can be supplied:
+SwiftPico looks for the usual RP2040 and RP2350 boot volumes. If another drive
+with a similar name is mounted, or automatic detection misses your board, pass
+the paths yourself:
 
 ```sh
 ./swiftpico flash --uf2 Firmware/build/Blink.uf2 --volume /Volumes/RPI-RP2
 ```
 
-Build and flash in one command:
+Once the basic flow works, build and flash in one command:
 
 ```sh
 ./swiftpico make

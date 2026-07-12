@@ -3,16 +3,19 @@
 ## Chapter 11: Debugging
 
 
-Start OpenOCD using the project configuration:
+If you have a supported debug probe, start OpenOCD using the project settings:
 
 ```sh
 ./swiftpico debug
 ```
 
-Override the executable or target configuration with:
+For a one-off probe or target change, override those settings on the command
+line:
 
 ```sh
 ./swiftpico debug --openocd openocd --target target/rp2350.cfg
 ```
 
-The exact debug-probe configuration should be placed in `openOCDConfig` inside `swiftpico.json`.
+Keep the probe-specific OpenOCD files in `openOCDConfig` inside
+`swiftpico.json`. That way the command stays short and the project records the
+setup that actually works.

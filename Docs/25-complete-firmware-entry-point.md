@@ -3,7 +3,8 @@
 ## Chapter 25: Complete firmware entry point
 
 
-Embedded Swift firmware uses an `@main` type:
+Embedded Swift firmware starts from an `@main` type. This lower-level example
+shows the shape to use when setup failures need to be handled explicitly:
 
 ```swift
 import PicoKit
@@ -32,7 +33,8 @@ struct Blink {
 }
 ```
 
-For a smaller fail-fast sketch:
+For a smaller fail-fast sketch, the high-level API removes the setup `do`/`catch`
+and keeps the loop in view:
 
 ```swift
 import PicoKit

@@ -3,9 +3,13 @@
 ## Chapter 7: Project configuration
 
 
-PicoKit commands locate `swiftpico.json` in the current directory or one of its parent directories.
+SwiftPico looks for `swiftpico.json` in the current directory and then walks up
+through parent directories. That means commands work from a source subfolder as
+well as from the project root.
 
-A configuration can contain:
+Most projects can leave this file alone after `init`. It is still useful to know
+what is in it when changing boards, naming a firmware target, or using a custom
+SDK checkout:
 
 ```json
 {
@@ -24,7 +28,7 @@ A configuration can contain:
 }
 ```
 
-Additional supported fields include:
+These are the supported fields when you do need to customize the setup:
 
 | Field | Purpose |
 |---|---|

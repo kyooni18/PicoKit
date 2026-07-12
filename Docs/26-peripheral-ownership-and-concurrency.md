@@ -3,7 +3,8 @@
 ## Chapter 26: Peripheral ownership and concurrency
 
 
-Each hardware peripheral should have one logical owner.
+Give each hardware peripheral one logical owner. It makes pin conflicts and
+reconfiguration bugs much easier to reason about.
 
 Do not create competing active instances for:
 
@@ -14,6 +15,10 @@ Do not create competing active instances for:
 - The watchdog
 - Shared USB stdio state
 
-PicoKit peripheral instances do not implement synchronization. Use each instance from one foreground execution context. Do not call the same instance concurrently from multiple Swift tasks, cores, or interrupt handlers.
+PicoKit peripheral instances do not implement synchronization. Use each instance
+from one foreground execution context; do not call the same instance concurrently
+from multiple Swift tasks, cores, or interrupt handlers.
 
-The `Pico` and `PicoSerial` types are marked `@unchecked Sendable` to permit embedded use, but this does not make their underlying hardware operations thread-safe.
+`Pico` and `PicoSerial` are marked `@unchecked Sendable` so they are usable in
+embedded Swift code, but that annotation does not make the underlying hardware
+thread-safe.

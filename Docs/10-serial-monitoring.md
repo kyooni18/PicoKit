@@ -3,13 +3,14 @@
 ## Chapter 10: Serial monitoring
 
 
-List detected boot volumes and serial devices:
+If you are not sure which USB device belongs to the Pico, ask SwiftPico to list
+what it can see:
 
 ```sh
 ./swiftpico list
 ```
 
-Open a serial monitor:
+Then open a serial monitor:
 
 ```sh
 ./swiftpico monitor
@@ -25,4 +26,6 @@ Options:
 --reconnect
 ```
 
-When multiple serial devices are detected, specify the device explicitly. `--reconnect` causes the monitor to reconnect after a firmware reset or USB disconnection.
+When multiple serial devices are present, choose one explicitly. `--reconnect`
+is handy during development: the monitor waits for the same device to return
+after a firmware reset or brief USB disconnect.

@@ -3,7 +3,9 @@
 ## Chapter 13: Error model
 
 
-The low-level API uses `PicoKitError`:
+The low-level API tells you what went wrong with `PicoKitError`. You normally
+see these errors when a value is invalid, a bounded operation times out, or the
+SDK rejects a peripheral setup:
 
 ```swift
 public enum PicoKitError: Error {
@@ -18,7 +20,7 @@ public enum PicoKitError: Error {
 }
 ```
 
-Typical meanings:
+In day-to-day terms, the cases mean:
 
 | Error | Meaning |
 |---|---|
@@ -31,4 +33,5 @@ Typical meanings:
 | `ioFailure` | Pico SDK operation returned an error status |
 | `ownershipConflict` | An operation was attempted with the wrong peripheral owner |
 
-`PicoKitError.description` provides a human-readable diagnostic string.
+`PicoKitError.description` is written for logs and error messages, so printing
+the error is usually enough while bringing up a board.

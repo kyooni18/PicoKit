@@ -3,19 +3,19 @@
 ## Chapter 22: SPI
 
 
-Create SPI0 or SPI1:
+Choose SPI0 or SPI1 and make the bus pins and clock rate explicit:
 
 ```swift
 let spi = try PicoSPI(
     .spi0,
     frequency: .megahertz(8),
-    sck: PicoPin(18),
-    mosi: PicoPin(19),
-    miso: PicoPin(16)
+    sck: try PicoPin(18),
+    mosi: try PicoPin(19),
+    miso: try PicoPin(16)
 )
 ```
 
-Perform a full-duplex transfer:
+Transfers are full duplex: every byte sent clocks one byte back:
 
 ```swift
 let received = try spi.transfer(
@@ -24,8 +24,11 @@ let received = try spi.transfer(
 )
 ```
 
-The returned array has the same length as the transmitted array.
+The returned array always has the same length as the transmitted array.
 
-Chip-select management is not built into `PicoSPI`. Configure a GPIO output and drive it around each transaction.
+`PicoSPI` deliberately does not own chip select. Configure a GPIO output and
+drive it around each transaction so the ownership stays obvious in your driver.
 
-The current API uses the Pico SDK’s default SPI format. It does not expose clock polarity, clock phase, bit order, or frame-width configuration.
+The current API uses the Pico SDK's default SPI format. It does not yet expose
+clock polarity, clock phase, bit order, or frame width, so confirm that default
+matches the part you are talking to.

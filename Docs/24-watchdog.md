@@ -3,7 +3,8 @@
 ## Chapter 24: Watchdog
 
 
-Create and enable the watchdog:
+Create the watchdog once, choose a timeout, and enable it after the rest of the
+firmware is ready to service it:
 
 ```swift
 let watchdog = PicoWatchdog()
@@ -13,10 +14,12 @@ try watchdog.enable(
 )
 ```
 
-Feed it periodically:
+Feed it from the part of the main loop that proves the firmware is still alive:
 
 ```swift
 watchdog.update()
 ```
 
-The timeout is converted to milliseconds for the Pico SDK. The value must fit the bridge’s `UInt32` millisecond argument.
+The timeout is converted to milliseconds for the Pico SDK, so it must fit the
+bridge's `UInt32` millisecond argument. Pick a value with enough headroom for a
+slow but healthy loop.

@@ -3,6 +3,10 @@
 ## Chapter 31: API summary
 
 
+This is the map of the public surface. For code you can paste into a firmware
+entry point, start with the high-level API guide; use this chapter when you need
+to find the exact type or function name.
+
 ### Core
 
 ```text

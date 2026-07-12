@@ -12,7 +12,7 @@ public enum PicoChip {
 }
 ```
 
-This identifies the MCU family.
+This tells PicoKit which MCU family a board belongs to.
 
 ### `PicoBoard`
 
@@ -25,7 +25,7 @@ public enum PicoBoard {
 }
 ```
 
-Important properties:
+The properties you will reach for most often are:
 
 ```swift
 board.chip
@@ -34,17 +34,20 @@ board.onboardLEDPin
 board.onboardLED
 ```
 
-Use `init?(configurationName:)` when decoding board names from user configuration.
+Use `init?(configurationName:)` when a board name comes from configuration or a
+command line. It accepts the canonical spellings and the historical hyphenated
+aliases.
 
 ### `PicoPin`
 
-`PicoPin` validates a GPIO number before hardware access:
+`PicoPin` is the low-level API's answer to "is this actually a usable GPIO?" It
+validates the number before anything touches hardware:
 
 ```swift
 let pin = try PicoPin(15)
 ```
 
-Valid values are `0...29`. Invalid values throw:
+Valid values are `0...29`; an invalid value throws:
 
 ```swift
 PicoKitError.invalidPin
@@ -58,7 +61,8 @@ pin.rawValue
 
 ### `Duration`
 
-A `Duration` stores a positive number of microseconds:
+A `Duration` stores a positive number of microseconds. Construct one when an
+operation needs an explicit delay or timeout:
 
 ```swift
 let shortDelay = try Duration.microseconds(10)
@@ -66,7 +70,9 @@ let interval = try Duration.milliseconds(500)
 let timeout = try Duration.seconds(2)
 ```
 
-Zero is not accepted by the type factories. The standalone `delay`, `sleep`, and related convenience functions treat zero as a valid no-op.
+Zero is not accepted by these factories, because a low-level timeout of zero is
+usually a bug. The standalone `delay`, `sleep`, and related convenience
+functions deliberately treat zero as a no-op.
 
 ### `Frequency`
 

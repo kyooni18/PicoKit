@@ -3,20 +3,22 @@
 ## Chapter 6: Creating a project
 
 
-Create a project with:
+When you want a fresh firmware project rather than another in-tree example,
+start here:
 
 ```sh
 swift run swiftpico init --board pico2_w --name Blink --template blink
 ```
 
-`swiftpico init` creates a standalone Swift package that depends on
+`swiftpico init` creates a normal standalone Swift package that depends on
 `https://github.com/kyooni18/PicoKit.git`, writes the board-specific
 `swiftpico.json` configuration, and resolves the Pico SDK submodule required by
 the firmware build. Use `--skip-resolve` when creating an offline scaffold.
 
-`new` is an alias for `init`.
+`new` is an alias for `init`, so use whichever reads better in your shell
+history.
 
-Available templates are:
+The templates are intentionally small starting points:
 
 - `blink`
 - `serial`
@@ -27,7 +29,7 @@ Available templates are:
 - `interrupt`
 - `watchdog`
 
-Useful initialization options include:
+The options you will use most often are:
 
 ```text
 --board BOARD
@@ -40,7 +42,8 @@ Useful initialization options include:
 --skip-resolve
 ```
 
-Generated projects include a local `./swiftpico` launcher. After creation, commands can be run from the generated project:
+Generated projects include a local `./swiftpico` launcher. Once you are in the
+project directory, the usual loop looks like this:
 
 ```sh
 ./swiftpico build

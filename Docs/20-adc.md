@@ -3,20 +3,20 @@
 ## Chapter 20: ADC
 
 
-Initialize the ADC:
+Create one ADC instance before taking readings:
 
 ```swift
 let adc = try PicoADC()
 ```
 
-Read an explicit channel:
+Then read either a GPIO-backed channel or the on-chip temperature channel:
 
 ```swift
 let value = try adc.read(.gpio26)
 let temperatureRaw = try adc.read(.temperature)
 ```
 
-Available channels:
+The available channel names are:
 
 ```swift
 .gpio26
@@ -26,11 +26,14 @@ Available channels:
 .temperature
 ```
 
-Helper forms:
+If the channel is already expressed as a Pico GPIO number, the helpers are a
+little shorter:
 
 ```swift
 let value1 = try analogRead(.gpio26, using: adc)
 let value2 = try analogRead(26, using: adc)
 ```
 
-The integer helper accepts only GPIO 26 through GPIO 29. ADC readings are raw `UInt16` values; voltage and temperature conversion are left to application code.
+The integer helper accepts only GPIO 26 through GPIO 29. Readings are raw
+`UInt16` values; converting them to volts or degrees belongs in application code
+because the right conversion depends on your board and reference voltage.

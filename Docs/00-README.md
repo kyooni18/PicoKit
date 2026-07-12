@@ -2,7 +2,10 @@
 
 # Chapter Index
 
-This documentation is divided into the following files:
+Think of these chapters as a path rather than a wall of reference material.
+If you are new to PicoKit, begin with the overview, requirements, and project
+creation chapters; the peripheral chapters are there when your project needs
+them.
 
 1. [Overview](01-overview.md)
 2. [Supported boards](02-supported-boards.md)

@@ -3,19 +3,19 @@
 ## Chapter 8: Building firmware
 
 
-Build the current project:
+From the generated project directory, build the firmware with:
 
 ```sh
 ./swiftpico build
 ```
 
-Aliases:
+If you prefer short commands while iterating:
 
 ```sh
 ./swiftpico b
 ```
 
-Options include:
+Useful build options include:
 
 ```text
 --configuration debug|release
@@ -24,7 +24,9 @@ Options include:
 --verbose
 ```
 
-For CMake firmware projects, PicoKit configures the project and runs the CMake build. The supplied firmware CMake file selects an Embedded Swift target according to the Pico platform:
+For CMake firmware projects, SwiftPico configures CMake and then asks it to
+build. The supplied CMake file chooses the Embedded Swift target that matches
+your Pico platform:
 
 | Pico platform | Swift target |
 |---|---|
@@ -32,9 +34,12 @@ For CMake firmware projects, PicoKit configures the project and runs the CMake b
 | RP2350 ARM | `armv7em-none-none-eabi` |
 | RP2350 RISC-V | `riscv32-none-none-eabi` |
 
-The CMake build creates a static Swift `PicoKit` library, links it with `PicoKitSDKBridge`, and then links the application executable against that library.
+The result is a static Swift `PicoKit` library linked with `PicoKitSDKBridge`,
+followed by your application executable. If the build fails before compiling
+Swift, `swiftpico doctor` is usually the fastest way to spot a missing host
+tool.
 
-Remove build artifacts with:
+To start over with a clean firmware build directory:
 
 ```sh
 ./swiftpico clean

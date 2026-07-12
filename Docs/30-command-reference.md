@@ -3,6 +3,9 @@
 ## Chapter 30: Command reference
 
 
+When you need a reminder rather than a full guide, this is the short version of
+the SwiftPico command set:
+
 | Command | Aliases | Purpose |
 |---|---|---|
 | `init` | `new` | Create a standalone project |
@@ -16,3 +19,6 @@
 | `info` | — | Show resolved project configuration |
 | `template` | — | List templates |
 | `doctor` | `diagnose` | Check the development environment |
+
+Run `swiftpico help` for option details and examples for the command you are
+about to use.

@@ -3,7 +3,8 @@
 ## Chapter 28: C bridge behavior
 
 
-The C bridge provides fixed-width functions for:
+The C bridge is the small, intentionally unglamorous boundary between Swift and
+the Pico SDK. It provides fixed-width functions for:
 
 - Stdio initialization and output
 - UART setup, byte reads, and bounded writes
@@ -17,4 +18,6 @@ The C bridge provides fixed-width functions for:
 - Interrupt recording
 - Watchdog enable and update
 
-UART and SPI timeouts are implemented using deadlines based on `time_us_64()`. I2C delegates timeout behavior to the Pico SDK timeout functions.
+UART and SPI timeouts use deadlines based on `time_us_64()`. I2C delegates its
+timeout behavior to the Pico SDK timeout functions. Keeping those details here
+lets the Swift API stay predictable and portable.

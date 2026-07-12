@@ -3,7 +3,8 @@
 ## Chapter 5: Package products
 
 
-The Swift package exports:
+There are two things you can install from this package: the PicoKit library for
+firmware and the SwiftPico tool for creating and managing projects.
 
 ```swift
 .library(name: "PicoKit", targets: ["PicoKit"])

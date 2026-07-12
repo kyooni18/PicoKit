@@ -3,7 +3,8 @@
 ## Chapter 29: Current limitations
 
 
-The current library intentionally remains small. Notable limitations include:
+PicoKit intentionally stays small enough to understand. That means a few things
+are still left to application code or a focused driver:
 
 - No asynchronous API or scheduler integration
 - Blocking sleep and peripheral operations
@@ -22,4 +23,5 @@ The current library intentionally remains small. Notable limitations include:
 - Host builds cannot simulate hardware without injected abstractions
 - The high-level facade traps instead of returning errors
 
-Use low-level throwing APIs where runtime recovery matters, and use the facade for compact sketches whose configuration is known at compile time.
+Use low-level throwing APIs where runtime recovery matters. Use the facade for
+compact sketches whose configuration is known at compile time.
