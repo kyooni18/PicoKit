@@ -1,21 +1,28 @@
 cmake_minimum_required(VERSION 3.29)
 
-# The Pico SDK is vendored with PicoKit by default. An environment or CMake
-# value still wins, so projects can share a centrally installed SDK.
-if(NOT DEFINED PICO_SDK_PATH)
-    set(PICO_SDK_PATH "${CMAKE_CURRENT_LIST_DIR}/../Vendor/pico-sdk")
+# `PICOKIT_ROOT` points at the reusable PicoKit checkout. Generated projects
+# pass it from picokit.json; the in-tree example uses this default.
+if(NOT DEFINED PICOKIT_ROOT)
+    get_filename_component(PICOKIT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 endif()
+if(NOT DEFINED PICO_SDK_PATH)
+    set(PICO_SDK_PATH "${PICOKIT_ROOT}/Vendor/pico-sdk")
+endif()
+if(NOT DEFINED PICOKIT_PRODUCT)
+    set(PICOKIT_PRODUCT "PicoKitFirmware")
+endif()
+if(NOT DEFINED PICOKIT_SOURCE)
+    set(PICOKIT_SOURCE "${PICOKIT_ROOT}/Sources/Blink/main.swift")
+endif()
+
 include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+project(PicoKitFirmware)
+pico_sdk_init()
+enable_language(Swift)
 
 set(CMAKE_Swift_COMPILATION_MODE wholemodule)
 set(CMAKE_Swift_COMPILER_WORKS YES)
 
-project(picokit_blink)
-pico_sdk_init()
-enable_language(Swift)
-
-# Pico uses ARMv6-M; Pico 2 uses the RP2350's ARMv8-M-compatible ARMv7E-M
-# Swift target. CMake's PICO_BOARD=pico2 selects rp2350-arm-s by default.
 set(SWIFT_TARGET "armv6m-none-none-eabi")
 if(PICO_PLATFORM STREQUAL "rp2350-arm-s")
     set(SWIFT_TARGET "armv7em-none-none-eabi")
@@ -27,20 +34,25 @@ else()
     list(APPEND CLANG_ARCH_ABI_FLAGS "-Xcc -mfloat-abi=soft")
 endif()
 
-add_executable(picokit-blink ../Sources/Blink/main.swift PicoKitShim.c)
-set_target_properties(picokit-blink PROPERTIES LINKER_LANGUAGE CXX)
-target_link_libraries(picokit-blink pico_stdlib pico_status_led)
-pico_enable_stdio_usb(picokit-blink 1)
-pico_enable_stdio_uart(picokit-blink 0)
+# Layer 4: the only C target that includes Pico SDK headers. All SDK access is
+# behind fixed-width C functions so embedded Swift never imports SDK inlines.
+add_library(PicoKitSDKBridge STATIC PicoKitSDKBridge.c)
+target_link_libraries(PicoKitSDKBridge PUBLIC pico_stdlib pico_status_led hardware_adc hardware_i2c hardware_pwm hardware_spi hardware_watchdog)
 
-# Pico SDK interface targets carry C-only flags. Re-express them so Swift's
-# bridging-header import sees the same definitions and include directories.
+# Layers 2, 1, and public facade. This is a real Swift library; firmware
+# sources import PicoKit and link it instead of calling a project-local shim.
+file(GLOB PICOKIT_CORE_SOURCES CONFIGURE_DEPENDS "${PICOKIT_ROOT}/Sources/PicoKitCore/*.swift")
+file(GLOB PICOKIT_HAL_SOURCES CONFIGURE_DEPENDS "${PICOKIT_ROOT}/Sources/PicoKitHAL/*.swift")
+file(GLOB PICOKIT_FACADE_SOURCES CONFIGURE_DEPENDS "${PICOKIT_ROOT}/Sources/PicoKitFacade/*.swift")
+add_library(PicoKit STATIC ${PICOKIT_CORE_SOURCES} ${PICOKIT_HAL_SOURCES} ${PICOKIT_FACADE_SOURCES})
+set_target_properties(PicoKit PROPERTIES LINKER_LANGUAGE CXX Swift_MODULE_NAME PicoKit)
+target_link_libraries(PicoKit PUBLIC PicoKitSDKBridge)
+
+# Pico SDK interface targets contain C-only options. Keep them on C targets;
+# Swift receives the architecture, module, bridge header, and SDK definitions
+# it needs, but never raw C compiler flags.
 set_target_properties(pico_standard_link PROPERTIES INTERFACE_COMPILE_OPTIONS "")
 target_compile_options(pico_standard_link INTERFACE "$<$<COMPILE_LANGUAGE:C>:SHELL: -ffunction-sections -fdata-sections>")
-# RP2350's VFP support exports a C-only `-fno-math-errno` option. CMake passes
-# interface flags to Swift too, but current Embedded Swift rejects that raw C
-# flag. The library itself keeps its own C compile options; only the exported
-# consumer option is cleared here.
 set_target_properties(pico_float_pico_vfp PROPERTIES INTERFACE_COMPILE_OPTIONS "")
 
 set_property(GLOBAL PROPERTY picokit_visited_targets "")
@@ -52,14 +64,12 @@ function(picokit_collect_definitions target)
     endif()
     list(APPEND visited ${target})
     set_property(GLOBAL PROPERTY picokit_visited_targets "${visited}")
-
     get_target_property(definitions ${target} INTERFACE_COMPILE_DEFINITIONS)
     if(definitions)
         get_property(collected GLOBAL PROPERTY picokit_compile_definitions)
         list(APPEND collected ${definitions})
         set_property(GLOBAL PROPERTY picokit_compile_definitions "${collected}")
     endif()
-
     get_target_property(libraries ${target} INTERFACE_LINK_LIBRARIES)
     if(libraries)
         foreach(library ${libraries})
@@ -68,11 +78,10 @@ function(picokit_collect_definitions target)
     endif()
 endfunction()
 
-picokit_collect_definitions(picokit-blink)
+picokit_collect_definitions(PicoKit)
 get_property(COMPILE_DEFINITIONS GLOBAL PROPERTY picokit_compile_definitions)
 list(REMOVE_DUPLICATES COMPILE_DEFINITIONS)
 list(PREPEND COMPILE_DEFINITIONS "")
-string(REPLACE "$<TARGET_PROPERTY:PICO_TARGET_BINARY_TYPE>" "$<TARGET_PROPERTY:picokit-blink,PICO_TARGET_BINARY_TYPE>" COMPILE_DEFINITIONS "${COMPILE_DEFINITIONS}")
 string(REPLACE ";" " -Xcc -D" COMPILE_DEFINITIONS "${COMPILE_DEFINITIONS}")
 
 set(IMPLICIT_INCLUDES)
@@ -80,11 +89,12 @@ foreach(directory ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES} ${CMAKE_CXX_IMPLICIT_I
     string(CONCAT IMPLICIT_INCLUDES ${IMPLICIT_INCLUDES} "-Xcc -I${directory} ")
 endforeach()
 
-target_compile_options(picokit-blink PUBLIC "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
+target_compile_options(PicoKit PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
     -target ${SWIFT_TARGET}
     -enable-experimental-feature Embedded
     -parse-as-library
-    -module-name PicoKitFirmware
+    -module-name PicoKit
+    -D PICOKIT_PICO_SDK
     ${CLANG_ARCH_ABI_FLAGS}
     -Xcc -fshort-enums
     -Xfrontend -function-sections
@@ -93,4 +103,9 @@ target_compile_options(picokit-blink PUBLIC "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
     ${IMPLICIT_INCLUDES}
 >")
 
-pico_add_extra_outputs(picokit-blink)
+add_executable(${PICOKIT_PRODUCT} ${PICOKIT_SOURCE})
+set_target_properties(${PICOKIT_PRODUCT} PROPERTIES LINKER_LANGUAGE CXX)
+target_link_libraries(${PICOKIT_PRODUCT} PRIVATE PicoKit)
+pico_enable_stdio_usb(${PICOKIT_PRODUCT} 1)
+pico_enable_stdio_uart(${PICOKIT_PRODUCT} 0)
+pico_add_extra_outputs(${PICOKIT_PRODUCT})

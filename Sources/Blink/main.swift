@@ -1,21 +1,26 @@
-/// Embedded Swift entry point for the Raspberry Pi Pico 2 W.
-///
-/// The Pico SDK C shim is intentional: it selects the board-native status LED
-/// (CYW43 GPIO 0 on Pico 2 W) and keeps SDK inline register helpers on the C
-/// side, where they compile correctly for RP2350.
+import PicoKit
+
+/// Embedded Swift entry point. The application uses the PicoKit Swift library;
+/// its Pico SDK bridge is linked by Firmware/CMakeLists.txt.
 @main
 struct Blink {
     static func main() {
-        picokit_stdio_init()
-        guard picokit_status_led_init() == 0 else {
+        do {
+            let serial = try USBSerial()
+            let led = try BoardLED(board: .pico2W)
+            let halfSecond = try Duration.milliseconds(500)
+            while true {
+                try led.set(.high)
+                try serial.write("LED on")
+                try Clock.sleep(for: halfSecond)
+                try led.set(.low)
+                try serial.write("LED off")
+                try Clock.sleep(for: halfSecond)
+            }
+        } catch {
+            // There is no dependable console until stdio initialization has
+            // succeeded, so leave the board in a safe idle state.
             while true {}
-        }
-
-        while true {
-            picokit_status_led_write(1)
-            picokit_sleep_ms(500)
-            picokit_status_led_write(0)
-            picokit_sleep_ms(500)
         }
     }
 }

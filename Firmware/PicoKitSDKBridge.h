@@ -1,0 +1,42 @@
+#pragma once
+
+#include <stdint.h>
+
+// This is PicoKit's only Pico SDK-facing header. Swift imports it only while
+// compiling the PicoKit library, never application sources directly.
+void picokit_stdio_init(void);
+void picokit_stdio_write(const char *text);
+int32_t picokit_uart_init(uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx);
+int32_t picokit_uart_write(uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us);
+int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us);
+int32_t picokit_status_led_init(void);
+void picokit_status_led_write(uint32_t value);
+void picokit_status_led_toggle(void);
+
+void picokit_gpio_init(uint32_t pin);
+void picokit_gpio_set_direction(uint32_t pin, uint32_t output);
+void picokit_gpio_write(uint32_t pin, uint32_t value);
+uint32_t picokit_gpio_read(uint32_t pin);
+void picokit_gpio_toggle(uint32_t pin);
+
+uint64_t picokit_time_us(void);
+void picokit_sleep_us(uint64_t microseconds);
+
+int32_t picokit_pwm_init(uint32_t pin, uint32_t frequency_hz);
+void picokit_pwm_set_level(uint32_t pin, uint16_t level);
+
+void picokit_adc_init(void);
+int32_t picokit_adc_read(uint32_t channel);
+
+int32_t picokit_i2c_init(uint32_t instance, uint32_t frequency_hz, uint32_t sda, uint32_t scl);
+int32_t picokit_i2c_write(uint32_t instance, uint32_t address, const uint8_t *bytes, uint32_t count, uint64_t timeout_us);
+int32_t picokit_i2c_read(uint32_t instance, uint32_t address, uint8_t *bytes, uint32_t count, uint64_t timeout_us);
+
+int32_t picokit_spi_init(uint32_t instance, uint32_t frequency_hz, uint32_t sck, uint32_t mosi, uint32_t miso);
+int32_t picokit_spi_transfer(uint32_t instance, const uint8_t *tx, uint8_t *rx, uint32_t count, uint64_t timeout_us);
+
+int32_t picokit_interrupt_enable(uint32_t pin, uint32_t edge);
+uint32_t picokit_interrupt_take(uint32_t pin);
+
+void picokit_watchdog_enable(uint32_t timeout_ms, uint32_t pause_on_debug);
+void picokit_watchdog_update(void);

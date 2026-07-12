@@ -8,5 +8,5 @@
   ],
   "firmwareDirectory" : "Firmware",
   "product" : "Blink",
-  "uf2" : "Firmware\/build\/picokit-blink.uf2"
+  "uf2" : "Firmware\/build\/Blink.uf2"
 }

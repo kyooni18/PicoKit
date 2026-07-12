@@ -1,4 +1,5 @@
 import Foundation
+import PicoKitCore
 
 @main
 struct PicoKitCommand {
@@ -14,6 +15,7 @@ struct PicoKitCommand {
     private static func run(_ arguments: [String]) throws {
         guard let command = arguments.first else { throw CLIError.usage }
         let args = Array(arguments.dropFirst())
+        try validateArguments(command: command, arguments: args)
         switch command {
         case "help", "--help", "-h": print(usage)
         case "init", "new": try initialise(args)
@@ -26,6 +28,7 @@ struct PicoKitCommand {
         case "list", "devices": list()
         case "info": try showInfo(args)
         case "template": showTemplates(args)
+        case "doctor", "diagnose": try doctor(args)
         default: throw CLIError.message("unknown command '\(command)'\n\n\(usage)")
         }
     }
@@ -33,25 +36,27 @@ struct PicoKitCommand {
     // MARK: - init / new
 
     private static func initialise(_ arguments: [String]) throws {
-        let board = option("--board", in: arguments) ?? "pico"
-        guard ["pico", "pico-w", "pico2", "pico2_w"].contains(board) else {
-            throw CLIError.message("unsupported board '\(board)'. Choose: pico, pico-w, pico2, pico2_w")
+        let requestedBoard = option("--board", in: arguments) ?? "pico"
+        guard let picoBoard = PicoBoard(configurationName: requestedBoard) else {
+            throw CLIError.message("unsupported board '\(requestedBoard)'. Choose: pico, pico_w, pico2, pico2_w")
         }
+        let board = picoBoard.rawValue
         let name = option("--name", in: arguments) ?? "PicoApp"
         let template = option("--template", in: arguments) ?? "blink"
-        guard ["blink", "serial"].contains(template) else {
-            throw CLIError.message("template '\(template)' is not available for standalone firmware yet. Choose: blink, serial")
+        guard availableTemplates.contains(template) else {
+            throw CLIError.message("unknown template '\(template)'. Run 'picokit template' to list supported templates.")
         }
         let force = arguments.contains("--force")
         let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-        let picoRoot = findPicoKitRoot(from: currentDirectory)
+        let picoRoot = findPicoKitRoot(from: currentDirectory) ?? ProcessInfo.processInfo.environment["PICOKIT_ROOT"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        guard let picoRoot else {
+            throw CLIError.message("PicoKit checkout not found. Run init from the PicoKit checkout or set PICOKIT_ROOT to it.")
+        }
         let projectRoot: URL
         if let path = option("--path", in: arguments) {
             projectRoot = URL(fileURLWithPath: path, relativeTo: currentDirectory).standardizedFileURL
-        } else if let picoRoot {
-            projectRoot = picoRoot.deletingLastPathComponent().appendingPathComponent(name, isDirectory: true)
         } else {
-            projectRoot = currentDirectory
+            projectRoot = picoRoot.deletingLastPathComponent().appendingPathComponent(name, isDirectory: true)
         }
         try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
 
@@ -60,18 +65,19 @@ struct PicoKitCommand {
             throw CLIError.message("picokit.json already exists. Use --force to overwrite.")
         }
 
-        let chip = board.hasPrefix("pico2") ? "rp2350" : "rp2040"
+        let target = firmwareTargetName(name)
         let config = PicoKitConfig(
             board: board,
             firmwareDirectory: "Firmware",
-            picoSDKPath: picoRoot?.appendingPathComponent("Vendor/pico-sdk").standardizedFileURL.path,
-            picotool: picoRoot?.appendingPathComponent("Tools/picotool-build/picotool").standardizedFileURL.path,
+            picoSDKPath: picoRoot.appendingPathComponent("Vendor/pico-sdk").standardizedFileURL.path,
+            picoKitPath: picoRoot.path,
+            picotool: picoRoot.appendingPathComponent("Tools/picotool-build/picotool").standardizedFileURL.path,
             swiftSDK: nil,
             product: name,
             configuration: "release",
-            uf2: "Firmware/build/picokit-blink.uf2",
+            uf2: "Firmware/build/\(target).uf2",
             openOCD: "openocd",
-            openOCDConfig: board.hasPrefix("pico2")
+            openOCDConfig: picoBoard.chip == .rp2350
                 ? ["interface/cmsis-dap.cfg", "target/rp2350.cfg"]
                 : ["interface/cmsis-dap.cfg", "target/rp2040.cfg"]
         )
@@ -86,26 +92,20 @@ struct PicoKitCommand {
             return
         }
 
-        let sourceCode = templateSource(template: template, board: board, name: name, chip: chip)
+        let sourceCode = templateSource(template: template, board: board, name: name)
         try sourceCode.write(to: sourceFile, atomically: true, encoding: .utf8)
 
         let firmwareDir = projectRoot.appendingPathComponent("Firmware", isDirectory: true)
         try FileManager.default.createDirectory(at: firmwareDir, withIntermediateDirectories: true)
-        if let picoRoot {
-            let sourceFirmware = picoRoot.appendingPathComponent("Firmware")
-            for file in ["CMakeLists.txt", "BridgingHeader.h", "PicoKitShim.c"] {
-                let source = sourceFirmware.appendingPathComponent(file)
-                var contents = try String(contentsOf: source, encoding: .utf8)
-                contents = contents.replacingOccurrences(of: "../Sources/Blink/main.swift", with: "../Sources/\(name)/main.swift")
-                try contents.write(to: firmwareDir.appendingPathComponent(file), atomically: true, encoding: .utf8)
-            }
+        let sourceFirmware = picoRoot.appendingPathComponent("Firmware")
+        for file in ["CMakeLists.txt", "BridgingHeader.h", "PicoKitSDKBridge.h", "PicoKitSDKBridge.c"] {
+            let source = sourceFirmware.appendingPathComponent(file)
+            try FileManager.default.copyItem(at: source, to: firmwareDir.appendingPathComponent(file))
         }
 
-        if let picoRoot {
-            let runner = projectRoot.appendingPathComponent("picokit")
-            try projectRunner(picoKitRoot: picoRoot).write(to: runner, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: runner.path)
-        }
+        let runner = projectRoot.appendingPathComponent("picokit")
+        try projectRunner(picoKitRoot: picoRoot).write(to: runner, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: runner.path)
 
         print("""
         Project '\(name)' created for board '\(board)'.
@@ -116,7 +116,7 @@ struct PicoKitCommand {
           - \(sourceFile.path)
           - Firmware/CMakeLists.txt
           - Firmware/BridgingHeader.h
-          - Firmware/PicoKitShim.c
+          - Firmware/PicoKitSDKBridge.c/.h
           - picokit
 
         Next steps:
@@ -132,17 +132,30 @@ struct PicoKitCommand {
         let project = try context(arguments)
         let config = project.config
         if let firmwareDirectory = config.firmwareDirectory {
+            let configuration = option("--configuration", in: arguments) ?? config.configuration
+            guard ["debug", "release"].contains(configuration.lowercased()) else {
+                throw CLIError.message("configuration must be 'debug' or 'release', not '\(configuration)'")
+            }
+            guard isToolAvailable("arm-none-eabi-gcc") || ProcessInfo.processInfo.environment["PICO_TOOLCHAIN_PATH"] != nil else {
+                throw CLIError.message("arm-none-eabi-gcc was not found. Install the Pico SDK ARM toolchain or set PICO_TOOLCHAIN_PATH, then run 'picokit doctor'.")
+            }
             let firmwareURL = project.url(for: firmwareDirectory)
             let buildDirectory = firmwareURL.appendingPathComponent("build", isDirectory: true)
             var configure = [
                 "cmake", "-S", firmwareURL.path, "-B", buildDirectory.path,
-                "-G", "Ninja", "-DPICO_BOARD=\(config.board)",
+                "-G", "Ninja", "-DCMAKE_BUILD_TYPE=\(configuration.capitalized)", "-DPICO_BOARD=\(try canonicalBoard(config.board).cmakeName)",
             ]
+            let product = firmwareTargetName(option("--product", in: arguments) ?? config.product ?? "PicoKitFirmware")
+            let sourceName = option("--product", in: arguments) ?? config.product ?? "PicoKitFirmware"
+            configure += ["-DPICOKIT_PRODUCT=\(product)", "-DPICOKIT_SOURCE=\(project.root.appendingPathComponent("Sources/\(sourceName)/main.swift").path)"]
+            let picoKitRoot = config.picoKitPath.map(project.url(for:)) ?? findPicoKitRoot(from: project.root)
+            guard let picoKitRoot else { throw CLIError.message("PicoKit checkout not found. Set 'picoKitPath' in picokit.json.") }
+            configure.append("-DPICOKIT_ROOT=\(picoKitRoot.path)")
             if let picoSDKPath = config.picoSDKPath {
                 let sdkURL = project.url(for: picoSDKPath)
                 configure.append("-DPICO_SDK_PATH=\(sdkURL.path)")
             }
-            if config.board.hasPrefix("pico2") {
+            if try canonicalBoard(config.board).chip == .rp2350 {
                 configure.append("-DPICO_PLATFORM=rp2350-arm-s")
             }
             if let swiftCompiler = swiftCompilerPath() {
@@ -265,13 +278,21 @@ struct PicoKitCommand {
         try runProcess(["stty", "-F", device, baud, "raw", "-echo"])
         #endif
         print("Monitoring \(device) at \(baud) baud. Press Ctrl-C to stop.")
-        let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: device))
-        // `availableData` blocks until bytes arrive and is available on the
-        // macOS 10.13 deployment target used by this package.
-        while true {
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            FileHandle.standardOutput.write(data)
+        reconnect: while true {
+            let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: device))
+            while true {
+                let data = handle.availableData
+                guard !data.isEmpty else {
+                    try? handle.close()
+                    guard arguments.contains("--reconnect") else { return }
+                    print("Serial device disconnected; waiting to reconnect…")
+                    while !FileManager.default.fileExists(atPath: device) {
+                        Thread.sleep(forTimeInterval: 0.25)
+                    }
+                    continue reconnect
+                }
+                FileHandle.standardOutput.write(data)
+            }
         }
     }
 
@@ -289,6 +310,47 @@ struct PicoKitCommand {
         print("\n=== Serial Devices ===")
         let devices = serialDevices()
         print(devices.isEmpty ? "  none" : devices.map { "  \($0)" }.joined(separator: "\n"))
+    }
+
+    // MARK: - environment diagnostics
+
+    private static func doctor(_ arguments: [String]) throws {
+        let current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let picoKitRoot = findPicoKitRoot(from: current)
+        print("=== PicoKit Environment ===")
+        reportTool("swift", arguments: ["--version"])
+        reportTool("cmake", arguments: ["--version"])
+        reportTool("ninja", arguments: ["--version"])
+        reportTool("arm-none-eabi-gcc", arguments: ["--version"])
+        if let picoKitRoot {
+            let sdk = picoKitRoot.appendingPathComponent("Vendor/pico-sdk")
+            let bridge = picoKitRoot.appendingPathComponent("Firmware/PicoKitSDKBridge.c")
+            print("  PicoKit:     \(picoKitRoot.path)")
+            print("  Pico SDK:    \(FileManager.default.fileExists(atPath: sdk.path) ? sdk.path : "MISSING")")
+            print("  SDK bridge:  \(FileManager.default.fileExists(atPath: bridge.path) ? "available" : "MISSING")")
+        } else {
+            print("  PicoKit:     not found from \(current.path)")
+        }
+        print("  Boot volumes: \(findBootVolume()?.path ?? "none")")
+        print("  Serial:      \(serialDevices().joined(separator: ", ").isEmpty ? "none" : serialDevices().joined(separator: ", "))")
+    }
+
+    private static func reportTool(_ executable: String, arguments: [String]) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [executable] + arguments
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let firstLine = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .split(separator: "\n").first.map(String.init) ?? ""
+            print("  \(executable): \(process.terminationStatus == 0 ? firstLine : "MISSING")")
+        } catch {
+            print("  \(executable): MISSING")
+        }
     }
 
     // MARK: - info
@@ -321,65 +383,49 @@ struct PicoKitCommand {
         print("Available templates:")
         print("  blink         — Toggle onboard LED")
         print("  serial        — USB CDC serial output")
+        print("  adc           — Read ADC GPIO26")
+        print("  pwm           — Set a PWM duty cycle")
+        print("  i2c           — I2C timeout-safe write example")
+        print("  spi           — Configure SPI bus")
+        print("  interrupt     — Poll SDK-recorded GPIO edge events")
+        print("  watchdog      — Enable and service watchdog")
     }
 
     // MARK: - Template Sources
 
-    private static func templateSource(template: String, board: String, name: String, chip: String) -> String {
-        let ledPin = (board == "pico" || board == "pico2") ? "25" : "0"
+    private static func templateSource(template: String, board: String, name: String) -> String {
         switch template {
         case "blink":
-            return embeddedBlinkTemplate()
+            return embeddedBlinkTemplate(board: board)
         case "serial":
             return embeddedSerialTemplate(name: name)
         case "adc":
-            return adcTemplate(chip: chip)
+            return adcTemplate()
         case "pwm":
-            return pwmTemplate(chip: chip)
+            return pwmTemplate()
         case "i2c":
-            return i2cTemplate(chip: chip)
+            return i2cTemplate()
         case "spi":
-            return spiTemplate(chip: chip)
-        case "button":
-            return buttonTemplate(chip: chip)
-        case "all":
-            return allTemplate(board: board, ledPin: ledPin, chip: chip)
+            return spiTemplate()
+        case "interrupt": return interruptTemplate()
+        case "watchdog": return watchdogTemplate()
         default:
-            return blinkTemplate(board: board, ledPin: ledPin, chip: chip)
+            return embeddedBlinkTemplate(board: board)
         }
     }
 
-    private static func blinkTemplate(board: String, ledPin: String, chip: String) -> String {
+    private static func embeddedBlinkTemplate(board: String) -> String {
         return """
         import PicoKit
 
-        let gpio = PicoGPIO(chip: .\(chip))
-        let led = \(ledPin)
-        gpio.pinMode(led, .output)
-
-        print("Blink demo on \(board)")
-
-        while true {
-            gpio.toggle(led)
-            delay(500)
-        }
-        """
-    }
-
-    private static func embeddedBlinkTemplate() -> String {
-        return """
         @main
         struct Blink {
             static func main() {
-                picokit_stdio_init()
-                guard picokit_status_led_init() == 0 else {
-                    while true {}
-                }
+                let led = try! BoardLED(board: .\(board == "pico_w" ? "picoW" : board == "pico2_w" ? "pico2W" : board))
+                let period = try! Duration.milliseconds(500)
                 while true {
-                    picokit_status_led_write(1)
-                    picokit_sleep_ms(500)
-                    picokit_status_led_write(0)
-                    picokit_sleep_ms(500)
+                    try! led.toggle()
+                    try! Clock.sleep(for: period)
                 }
             }
         }
@@ -388,232 +434,170 @@ struct PicoKitCommand {
 
     private static func embeddedSerialTemplate(name: String) -> String {
         return """
+        import PicoKit
+
         @main
         struct SerialDemo {
             static func main() {
-                picokit_stdio_init()
-                picokit_sleep_ms(1_500)
+                let serial = try! USBSerial()
+                let period = try! Duration.seconds(1)
 
                 var counter = 0
                 while true {
-                    print("\(name) #\\(counter)")
+                    try! serial.write("\(name) #\\(counter)")
                     counter += 1
-                    picokit_sleep_ms(1_000)
+                    try! Clock.sleep(for: period)
                 }
             }
         }
         """
     }
 
-    private static func serialTemplate(name: String, chip: String) -> String {
+    private static func adcTemplate() -> String {
         return """
         import PicoKit
 
-        let gpio = PicoGPIO(chip: .\(chip))
-        let serial = PicoUART(.uart0, baudRate: 115_200)
-        serial.configurePins(tx: 0, rx: 1, using: gpio)
+        @main
+        struct ADCExample {
+            static func main() {
+                let serial = try! USBSerial()
+                let adc = try! PicoADC()
+                let period = try! Duration.seconds(1)
 
-        serial.print("Hello from \(name)")
-        serial.print("PicoKit Serial Demo")
-
-        var counter = 0
-        while true {
-            serial.print("Tick #\\(counter)")
-            counter += 1
-            delay(1000)
-        }
-        """
-    }
-
-    private static func adcTemplate(chip: String) -> String {
-        return """
-        import PicoKit
-
-        let gpio = PicoGPIO(chip: .\(chip))
-        let adc = PicoADC()
-        adc.begin(channel: .gpio26)
-
-        while true {
-            let raw = adc.analogRead(26)
-            let voltage = adc.readVoltage()
-            let temp = adc.readTemperature()
-            print("ADC26: \\(raw) mV: \\(String(format: "%.1f", voltage)) Temp: \\(String(format: "%.1f", temp))C")
-            delay(1000)
-        }
-        """
-    }
-
-    private static func pwmTemplate(chip: String) -> String {
-        return """
-        import PicoKit
-
-        let gpio = PicoGPIO(chip: .\(chip))
-        let pwmSlice = PicoPWM(PicoPWM.defaultSlices[0])
-        pwmSlice.configurePins(using: gpio)
-        pwmSlice.setWrap(255)
-        pwmSlice.enable()
-
-        while true {
-            for brightness in 0...255 {
-                pwmSlice.setCompare(UInt16(brightness))
-                delayMicroseconds(100)
-            }
-            for brightness in (0...255).reversed() {
-                pwmSlice.setCompare(UInt16(brightness))
-                delayMicroseconds(100)
+                while true {
+                    let raw = try! adc.read(.gpio26)
+                    try! serial.write("ADC26: \\(raw)")
+                    try! Clock.sleep(for: period)
+                }
             }
         }
         """
     }
 
-    private static func i2cTemplate(chip: String) -> String {
+    private static func pwmTemplate() -> String {
         return """
         import PicoKit
 
-        let gpio = PicoGPIO(chip: .\(chip))
-        let i2c = PicoI2C(.i2c0, speed: .standard)
-        i2c.configurePins(sda: 4, scl: 5, using: gpio)
+        @main
+        struct PWMExample {
+            static func main() {
+                let pin = try! PicoPin(0)
+                let pwm = try! PicoPWM(pin: pin, frequency: .kilohertz(1))
+                let period = try! Duration.milliseconds(10)
 
-        // Scan for I2C devices
-        print("I2C Scan:")
-        for addr in 1...127 {
-            if i2c.beginTransmission(UInt8(addr)) {
-                i2c.endTransmission()
-                print("  Found device at 0x\\(String(addr, radix: 16))")
+                while true {
+                    try! analogWrite(0, 128, using: pwm)
+                    try! Clock.sleep(for: period)
+                }
             }
         }
-
-        while true {
-            delay(5000)
-        }
         """
     }
 
-    private static func spiTemplate(chip: String) -> String {
+    private static func i2cTemplate() -> String {
         return """
         import PicoKit
 
-        let gpio = PicoGPIO(chip: .\(chip))
-        let spi = PicoSPI(.spi0, frequencyHz: 1_000_000, mode: .mode0)
-        spi.configurePins(sck: 18, mosi: 19, miso: 16, cs: 17, using: gpio)
+        @main
+        struct I2CExample {
+            static func main() {
+                let i2c = try! PicoI2C(.i2c0, frequency: .kilohertz(400), sda: try! PicoPin(4), scl: try! PicoPin(5))
+                let timeout = try! Duration.milliseconds(20)
 
-        // Select chip
-        gpio.digitalWrite(17, .low)
-
-        let data: [UInt8] = [0x00, 0xFF, 0xAA, 0x55]
-        let response = spi.transfer(UnsafeBufferPointer(data))
-        print("SPI response: \\(response)")
-
-        // Deselect chip
-        gpio.digitalWrite(17, .high)
-
-        while true {
-            delay(1000)
-        }
-        """
-    }
-
-    private static func buttonTemplate(chip: String) -> String {
-        return """
-        import PicoKit
-
-        let gpio = PicoGPIO(chip: .\(chip))
-        let button = Button(ButtonConfig(pin: 17, activeState: .low), using: gpio)
-        let led = LEDController(gpio: gpio, pin: 25)
-
-        print("Button demo — press GPIO17 to toggle LED")
-
-        while true {
-            if button.wasPressed() {
-                led.toggle()
-                print("Button pressed! LED toggled.")
+                while true {
+                    _ = try? i2c.write(address: 0x50, bytes: [0], timeout: timeout)
+                    try! Clock.sleep(for: try! Duration.seconds(1))
+                }
             }
-            delay(20)
         }
         """
     }
 
-    private static func allTemplate(board: String, ledPin: String, chip: String) -> String {
+    private static func spiTemplate() -> String {
         return """
         import PicoKit
 
-        // Setup GPIO
-        let gpio = PicoGPIO(chip: .\(chip))
+        @main
+        struct SPIExample {
+            static func main() {
+                _ = try! PicoSPI(.spi0, frequency: .megahertz(1), sck: try! PicoPin(18), mosi: try! PicoPin(19), miso: try! PicoPin(16))
 
-        // LED
-        let led = LEDController(gpio: gpio, pin: \(ledPin))
-
-        // UART Serial
-        let serial = PicoUART(.uart0, baudRate: 115_200)
-        serial.configurePins(tx: 0, rx: 1, using: gpio)
-
-        // ADC
-        let adc = PicoADC()
-        adc.begin(channel: .gpio26)
-
-        // PWM
-        let pwmSlice = PicoPWM(PicoPWM.defaultSlices[0])
-        pwmSlice.configurePins(using: gpio)
-        pwmSlice.setWrap(255)
-        pwmSlice.enable()
-
-        // Button
-        let button = Button(ButtonConfig(pin: 17, activeState: .low), using: gpio)
-
-        serial.print("PicoKit Full Demo — \(board)")
-
-        var tick: UInt = 0
-        while true {
-            // Blink LED
-            led.toggle()
-
-            // Read ADC
-            let adcVal = adc.analogRead(26)
-            serial.print("Tick \\(tick): ADC=\\(adcVal)")
-
-            // PWM sweep
-            pwmSlice.setCompare(UInt16(tick % 256))
-
-            // Button check
-            if button.wasPressed() {
-                serial.print("Button pressed!")
+                while true { try! Clock.sleep(for: try! Duration.seconds(1)) }
             }
-
-            tick += 1
-            delay(500)
         }
         """
     }
 
-    private static func packageSwiftContent(name: String) -> String {
+    private static func interruptTemplate() -> String {
         return """
-        // swift-tools-version: 6.0
-        import PackageDescription
+        import PicoKit
 
-        let package = Package(
-            name: "\(name)",
-            platforms: [
-                .macOS(.v13),
-            ],
-            dependencies: [
-                .package(path: "../PicoKit"),
-            ],
-            targets: [
-                .executableTarget(
-                    name: "\(name)",
-                    dependencies: [
-                        .product(name: "PicoKit", package: "PicoKit"),
-                    ],
-                    swiftSettings: [
-                        .enableExperimentalFeature("StrictConcurrency"),
-                    ]
-                ),
-            ]
-        )
+        @main
+        struct InterruptExample {
+            static func main() {
+                let pin = try! PicoPin(17)
+                let interrupts = PicoInterrupts()
+                try! interrupts.enable(pin, edge: .falling)
+
+                while true {
+                    if interrupts.takeEvents(for: pin) != 0 { /* handle in foreground */ }
+                }
+            }
+        }
+        """
+    }
+
+    private static func watchdogTemplate() -> String {
+        return """
+        import PicoKit
+
+        @main
+        struct WatchdogExample {
+            static func main() {
+                let watchdog = PicoWatchdog()
+                try! watchdog.enable(timeout: .seconds(5))
+                while true {
+                    watchdog.update()
+                    try! Clock.sleep(for: try! Duration.seconds(1))
+                }
+            }
+        }
         """
     }
 
     // MARK: - Helpers
+
+    private static let availableTemplates: Set<String> = ["blink", "serial", "adc", "pwm", "i2c", "spi", "interrupt", "watchdog"]
+
+    private static func canonicalBoard(_ value: String) throws -> PicoBoard {
+        guard let board = PicoBoard(configurationName: value) else {
+            throw CLIError.message("unsupported board '\(value)'. Choose: pico, pico_w, pico2, pico2_w")
+        }
+        return board
+    }
+
+    private static func firmwareTargetName(_ product: String) -> String {
+        let safe = product.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) || $0 == "_" || $0 == "-" ? String($0) : "_" }.joined()
+        return safe.isEmpty ? "PicoKitFirmware" : safe
+    }
+
+    private static func validateArguments(command: String, arguments: [String]) throws {
+        let valued: Set<String> = ["--board", "--name", "--template", "--path", "--configuration", "--swift-sdk", "--product", "--uf2", "--volume", "--openocd", "--target", "--device", "--baud", "--context"]
+        let flags: Set<String> = ["--force", "--verbose", "--reconnect"]
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            guard argument.hasPrefix("--") else { throw CLIError.message("unexpected argument '\(argument)' for \(command)") }
+            if valued.contains(argument) {
+                guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("--") else { throw CLIError.message("\(argument) requires a value") }
+                index += 2
+            } else if flags.contains(argument) {
+                index += 1
+            } else {
+                throw CLIError.message("unknown option '\(argument)' for \(command)")
+            }
+        }
+    }
 
     private static func context(_ arguments: [String]) throws -> ProjectContext {
         let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
@@ -629,6 +613,7 @@ struct PicoKitCommand {
             throw CLIError.message("project context not found: \(configURL.path)")
         }
         let config = try JSONDecoder().decode(PicoKitConfig.self, from: Data(contentsOf: configURL))
+        _ = try canonicalBoard(config.board)
         return ProjectContext(root: configURL.deletingLastPathComponent(), config: config)
     }
 
@@ -647,7 +632,7 @@ struct PicoKitCommand {
         var candidate = directory
         while candidate.path != "/" {
             let package = candidate.appendingPathComponent("Package.swift").path
-            let library = candidate.appendingPathComponent("Sources/PicoKit").path
+            let library = candidate.appendingPathComponent("Sources/PicoKitFacade").path
             if FileManager.default.fileExists(atPath: package), FileManager.default.fileExists(atPath: library) {
                 return candidate
             }
@@ -682,7 +667,7 @@ struct PicoKitCommand {
         let quotedRoot = picoKitRoot.path.replacingOccurrences(of: "'", with: "'\"'\"'")
         return """
         #!/bin/sh
-        exec swift run --package-path '\(quotedRoot)' picokit "$@"
+        PICOKIT_ROOT='\(quotedRoot)' exec swift run --package-path '\(quotedRoot)' picokit "$@"
         """
     }
 
@@ -691,6 +676,13 @@ struct PicoKitCommand {
             $0.hasPrefix("cu.usb") || $0.hasPrefix("ttyACM") || $0.hasPrefix("ttyUSB")
         } ?? []
         return devices.sorted().map { "/dev/\($0)" }
+    }
+
+    private static func isToolAvailable(_ executable: String) -> Bool {
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        return path.split(separator: ":").contains { directory in
+            FileManager.default.isExecutableFile(atPath: "\(directory)/\(executable)")
+        }
     }
 
     private static func findBootVolume() -> URL? {
@@ -792,7 +784,7 @@ struct PicoKitCommand {
     Commands:
       init    [--board BOARD] [--name NAME] [--template TPL] [--force]
               [--path PATH]
-              Create a standalone sibling project. Templates: blink, serial
+          Create a standalone sibling project. Run 'picokit template' for templates
       new     Alias for init
       build, b [--configuration debug|release] [--swift-sdk SDK] [--product P]
               Build the firmware
@@ -804,13 +796,14 @@ struct PicoKitCommand {
       debug   [--openocd PATH] [--target TARGET]
               Start OpenOCD debug session
       monitor, serial, mon [--device /dev/cu.usbmodem…] [--baud 115200]
-              Monitor serial output; automatically selects the only Pico device
+          [--reconnect] Monitor serial output; optionally reconnect after reset
       list, devices
               Show Pico boot volumes and serial devices
       info    Show current project configuration
       template List available project templates
+      doctor   Check the host toolchain, SDK bridge, boot volume, and serial devices
 
-    Boards: pico, pico-w, pico2, pico2_w
+    Boards: pico, pico_w, pico2, pico2_w (pico-w and pico2-w accepted as input)
 
     Commands locate picokit.json in the current directory or a parent directory.
     Generated projects include ./picokit, so use ./picokit build, flash, or monitor.
@@ -821,6 +814,7 @@ private struct PicoKitConfig: Codable {
     var board: String
     var firmwareDirectory: String? = nil
     var picoSDKPath: String? = nil
+    var picoKitPath: String? = nil
     var picotool: String? = nil
     var swiftSDK: String? = nil
     var product: String? = nil
