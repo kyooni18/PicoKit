@@ -1,4 +1,4 @@
-import PicoKitCore
+import PicoKit
 
 private final class FakeGPIO: DigitalIO {
     var modes: [(PicoPin, PinMode)] = []
@@ -35,6 +35,19 @@ struct PicoKitHostTests {
                 fatalError("pinMode accepted an invalid pin")
             } catch PicoKitError.invalidPin(30) {}
             catch { fatalError("wrong pinMode error: \(error)") }
+
+            let sketch = Pico(gpio: fake)
+            sketch.pinMode(7, .output)
+            sketch.digitalWrite(7, .high)
+            guard sketch.digitalRead(7) == .high else {
+                fatalError("non-throwing Pico facade failed")
+            }
+
+            // Keep the shortest global spelling in the compile surface too.
+            let _: (Int, PinMode) -> Void = pinMode
+            let _: (Int, PinState) -> Void = digitalWrite
+            let _: (UInt64) -> Void = sleep
+            let _: PicoSerial = Serial
             print("PicoKit host validation passed")
         } catch {
             fatalError("PicoKit host validation failed: \(error)")

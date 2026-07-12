@@ -64,6 +64,33 @@ try digitalWrite(15, .high, using: gpio)
 let state = try digitalRead(15, using: gpio)
 ```
 
+For small sketches, the high-level facade removes setup ceremony and
+`try`/optional handling. It fails fast on invalid configuration; the low-level
+throwing APIs above remain available for applications that need recovery:
+
+```swift
+import PicoKit
+
+pinMode(15, .output)
+Serial.println("starting")
+
+while true {
+    digitalWrite(15, .high)
+    sleep(500)
+    digitalWrite(15, .low)
+    sleep(500)
+}
+```
+
+The same API is available on an explicit `Pico` runtime, which is convenient
+for tests and alternate GPIO implementations:
+
+```swift
+let pico = Pico()
+pico.pinMode(15, .output)
+pico.digitalWrite(15, .high)
+```
+
 PWM uses the same `analogWrite` name, with an 8-bit duty cycle:
 
 ```swift

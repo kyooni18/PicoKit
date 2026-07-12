@@ -439,14 +439,11 @@ struct PicoKitCommand {
         @main
         struct SerialDemo {
             static func main() {
-                let serial = try! USBSerial()
-                let period = try! Duration.seconds(1)
-
                 var counter = 0
                 while true {
-                    try! serial.write("\(name) #\\(counter)")
+                    Serial.println("\(name) #\\(counter)")
                     counter += 1
-                    try! Clock.sleep(for: period)
+                    sleep(1_000)
                 }
             }
         }

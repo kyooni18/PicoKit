@@ -128,6 +128,125 @@ public final class USBSerial {
     }
 }
 
+// MARK: - High-level convenience API
+
+/// Convert a low-level failure into a firmware trap for the convenience API.
+///
+/// The low-level API remains throwing so applications that need to recover can
+/// do so. The convenience API is intended for small sketches, where an invalid
+/// pin or unavailable SDK feature is a programming/configuration error and a
+/// fail-fast message is more useful than forcing `try` through every call.
+@inline(__always)
+private func picoKitUnchecked<T>(_ operation: () throws -> T) -> T {
+    do {
+        return try operation()
+    } catch {
+        preconditionFailure("PicoKit operation failed: \(error)")
+    }
+}
+
+/// A small, non-throwing facade over the low-level PicoKit peripherals.
+///
+/// Use the module-level helpers for the shortest sketch syntax, or create a
+/// `Pico` with a custom `DigitalIO` implementation for tests and GPIO
+/// expanders. The low-level `PicoGPIO` and protocol APIs remain available when
+/// explicit error handling is needed.
+/// `Pico` is intended to be used from one foreground execution context, like
+/// the low-level peripheral instances it wraps.
+public final class Pico: @unchecked Sendable {
+    public let gpio: any DigitalIO
+    public let serial: PicoSerial
+
+    public init(gpio: any DigitalIO = PicoGPIO(), serial: PicoSerial = PicoSerial()) {
+        self.gpio = gpio
+        self.serial = serial
+    }
+
+    public func pinMode(_ pin: Int, _ mode: PinMode) {
+        picoKitUnchecked { try gpio.setMode(PicoPin(pin), mode: mode) }
+    }
+
+    public func digitalWrite(_ pin: Int, _ state: PinState) {
+        picoKitUnchecked { try gpio.write(PicoPin(pin), state: state) }
+    }
+
+    public func digitalRead(_ pin: Int) -> PinState {
+        picoKitUnchecked { try gpio.read(PicoPin(pin)) }
+    }
+
+    public func sleep(_ milliseconds: UInt64) {
+        guard milliseconds != 0 else { return }
+        picoKitUnchecked { try Clock.sleep(for: Duration.milliseconds(milliseconds)) }
+    }
+
+    public func sleepMicroseconds(_ microseconds: UInt64) {
+        guard microseconds != 0 else { return }
+        picoKitUnchecked { try Clock.sleep(for: Duration.microseconds(microseconds)) }
+    }
+}
+
+/// The default high-level Pico runtime used by the global helpers.
+public let pico = Pico()
+
+/// USB serial output with no setup ceremony or throwing calls.
+///
+/// The underlying USB stdio peripheral is initialized lazily on the first
+/// write, which keeps importing PicoKit side-effect free.
+/// Serial output is single-context, matching the Pico SDK stdio contract.
+public final class PicoSerial: @unchecked Sendable {
+    private lazy var usb = picoKitUnchecked { try USBSerial() }
+
+    public init() {}
+
+    public func write(_ text: String) {
+        picoKitUnchecked { try usb.write(text) }
+    }
+
+    public func print(_ text: String) {
+        write(text)
+    }
+
+    public func print<T>(_ value: T) {
+        print(String(describing: value))
+    }
+
+    public func println(_ text: String = "") {
+        write(text)
+        write("\n")
+    }
+
+    public func println<T>(_ value: T) {
+        print(value)
+        write("\n")
+    }
+}
+
+/// Arduino-style global serial port.
+public let Serial = pico.serial
+
+/// Non-throwing GPIO helpers backed by the default `pico` runtime.
+public func pinMode(_ pin: Int, _ mode: PinMode) {
+    pico.pinMode(pin, mode)
+}
+
+public func digitalWrite(_ pin: Int, _ state: PinState) {
+    pico.digitalWrite(pin, state)
+}
+
+public func digitalRead(_ pin: Int) -> PinState {
+    pico.digitalRead(pin)
+}
+
+/// Block the current core for the requested number of milliseconds.
+public func sleep(_ milliseconds: UInt64) {
+    pico.sleep(milliseconds)
+}
+
+/// Block the current core for the requested number of microseconds.
+public func sleepMicroseconds(_ microseconds: UInt64) {
+    pico.sleepMicroseconds(microseconds)
+}
+
 public enum UARTInstance: UInt32, Sendable { case uart0, uart1 }
 public final class PicoUART {
     public init(_ instance: UARTInstance, baudRate: Frequency, tx: PicoPin, rx: PicoPin) throws {
