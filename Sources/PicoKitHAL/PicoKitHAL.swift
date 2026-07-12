@@ -391,7 +391,7 @@ public final class PicoI2C {
         var result = [UInt8](repeating: 0, count: count)
         let status = result.withUnsafeMutableBufferPointer { picokit_i2c_read(instance.rawValue, UInt32(address), $0.baseAddress, UInt32($0.count), timeout.microseconds) }
         if status == -2 { throw PicoKitError.timedOut(operation: "I2C read") }
-        guard status == count else { throw PicoKitError.ioFailure(operation: "I2C read", status: status) }
+        guard status == Int32(count) else { throw PicoKitError.ioFailure(operation: "I2C read", status: status) }
         return result
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
@@ -420,7 +420,7 @@ public final class PicoSPI {
             }
         }
         if status == -2 { throw PicoKitError.timedOut(operation: "SPI transfer") }
-        guard status == bytes.count else { throw PicoKitError.ioFailure(operation: "SPI transfer", status: status) }
+        guard status == Int32(bytes.count) else { throw PicoKitError.ioFailure(operation: "SPI transfer", status: status) }
         return received
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")

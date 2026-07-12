@@ -17,6 +17,7 @@
 // bare-metal build exposes the equivalent allocator as memalign instead.
 int posix_memalign(void **pointer, size_t alignment, size_t size) {
     if (!pointer || alignment == 0 || (alignment & (alignment - 1)) != 0) return 22;
+    if (size == 0) { *pointer = NULL; return 0; }
     void *allocated = memalign(alignment, size);
     if (!allocated) return 12;
     *pointer = allocated;
