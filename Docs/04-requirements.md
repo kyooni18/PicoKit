@@ -16,10 +16,10 @@ start debugging Swift code:
 
 The host tools currently target macOS 13 or newer.
 
-Run the environment diagnostic command from the PicoKit checkout:
+Run the environment diagnostic command after installing SwiftPico:
 
 ```sh
-swift run swiftpico doctor
+swiftpico doctor
 ```
 
 It checks the Swift installation, CMake, Ninja, ARM cross compiler, SDK bridge,

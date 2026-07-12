@@ -26,10 +26,10 @@ Out of the box, PicoKit gives you:
 - SPI
 - GPIO interrupt event collection
 - Watchdog control
-- A host-side `swiftpico` command-line tool
 - High-level Arduino-style convenience functions
 - Low-level throwing APIs for recoverable failures
 
 Start with the high-level facade for a small blinking or serial sketch. Reach
 for the lower-level types when you need explicit ownership, timeouts, or a way
-to recover from an error.
+to recover from an error. For project setup and flashing, use the separate
+SwiftPico command-line tool.

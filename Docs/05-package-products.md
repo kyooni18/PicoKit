@@ -3,15 +3,11 @@
 ## Chapter 5: Package products
 
 
-There are two things you can install from this package: the PicoKit library for
-firmware and the SwiftPico tool for creating and managing projects.
+This package exports the PicoKit library used by firmware:
 
 ```swift
 .library(name: "PicoKit", targets: ["PicoKit"])
-.executable(name: "swiftpico", targets: ["SwiftPicoCLI"])
-.executable(name: "picokit", targets: ["SwiftPicoCLI"]) // compatibility alias
 ```
 
-`PicoKit` is the firmware-facing library. `swiftpico` is the separate host-side
-project initializer, build, flash, debug, and monitoring utility. `picokit` is
-kept as a compatibility alias.
+The project initializer and host-side build/flash/monitoring commands are
+provided by the separate [SwiftPico repository](https://github.com/kyooni18/swiftpico).

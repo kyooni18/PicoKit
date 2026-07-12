@@ -6,9 +6,6 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "PicoKit", targets: ["PicoKit"]),
-        .executable(name: "swiftpico", targets: ["SwiftPicoCLI"]),
-        // Compatibility product for projects that still invoke `picokit`.
-        .executable(name: "picokit", targets: ["SwiftPicoCLI"]),
     ],
     targets: [
         // Layer 1: portable value types, validation, units, and errors.
@@ -18,9 +15,6 @@ let package = Package(
         .target(name: "PicoKitHAL", dependencies: ["PicoKitCore"]),
         // Public umbrella. Firmware imports this product, never a C shim.
         .target(name: "PicoKit", dependencies: ["PicoKitCore", "PicoKitHAL"], path: "Sources/PicoKitFacade"),
-        // Layer 4 (the Pico SDK C bridge) deliberately lives under Firmware:
-        // SwiftPM must not attempt to import Pico SDK headers on the host.
-        .executableTarget(name: "SwiftPicoCLI", dependencies: ["PicoKitCore"], path: "Sources/SwiftPicoCLI"),
         // A Foundation-free host validation executable. Some embedded Swift
         // toolchains omit XCTest/Swift Testing, so this remains runnable in
         // the same toolchain used to generate firmware.

@@ -7,8 +7,6 @@ other side of a small C bridge.
 
 ## Architecture
 
-- `Sources/SwiftPicoCLI`: host CLI for diagnostics, project creation, build,
-  flash, debugging, and serial monitoring.
 - `Sources/PicoKitCore`: Foundation-free validation, units, errors, boards,
   and protocols.
 - `Sources/PicoKitHAL`: public GPIO, board LED, timer, USB/UART, PWM, ADC,
@@ -22,32 +20,24 @@ it is not part of a normal build.
 
 ## SwiftPico CLI
 
-Build the project tool once if you are working from this checkout:
+Project creation, firmware builds, USB flashing, and serial monitoring live in
+the separate [SwiftPico CLI](https://github.com/kyooni18/swiftpico) tool:
 
 ```sh
-swift build -c release --product swiftpico
-```
-
-After that, starting a project is a single command:
-
-```sh
+brew tap kyooni18/swiftpico https://github.com/kyooni18/swiftpico
+brew install swiftpico
 swiftpico init --board pico2_w --name Blink --template blink
 ```
 
-The initializer gives you the boring but necessary pieces: a `Package.swift`
-that depends on PicoKit, a board-aware `swiftpico.json`, a firmware CMake
-entrypoint, and a local launcher. It resolves PicoKit and initializes the Pico
-SDK submodule as part of setup. If you are offline, add `--skip-resolve` and
-resolve the package later.
-
-The old `picokit` executable remains as a compatibility alias.
+The initializer creates the `Package.swift`, board configuration, firmware CMake
+entrypoint, and local launcher needed for a PicoKit project.
 
 ## Requirements
 
 ```sh
 git clone --recurse-submodules https://github.com/kyooni18/PicoKit.git
 cd PicoKit
-swift run swiftpico doctor
+swiftpico doctor
 ```
 
 Firmware builds need CMake, Ninja, an Embedded Swift toolchain, and the Pico
@@ -159,7 +149,7 @@ swift run PicoKitHostTests
 sh Tests/cli-integration.sh
 # On a firmware toolchain host:
 sh Tests/firmware-matrix.sh
-swift run swiftpico init --board pico2_w --name Blink --template blink
+swiftpico init --board pico2_w --name Blink --template blink
 cd ../Blink
 ./swiftpico build
 ./swiftpico flash
