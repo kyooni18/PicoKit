@@ -29,15 +29,28 @@ brew install swiftpico
 swiftpico init --board pico2_w --name Blink --template blink
 ```
 
-The initializer creates the `Package.swift`, board configuration, firmware CMake
-entrypoint, and local launcher needed for a PicoKit project.
+The initializer creates a normal standalone Swift package. It writes the
+`Package.swift`, board configuration, firmware CMake entrypoint, and local
+launcher needed for a PicoKit project, so the PicoKit checkout itself can stay
+focused on the reusable library.
 
 ## Requirements
+
+Install the CLI and check the host toolchain first:
+
+```sh
+brew tap kyooni18/swiftpico https://github.com/kyooni18/swiftpico
+brew install swiftpico
+swiftpico doctor
+```
+
+To work on PicoKit itself, clone the library and run its host validation:
 
 ```sh
 git clone --recurse-submodules https://github.com/kyooni18/PicoKit.git
 cd PicoKit
-swiftpico doctor
+swift build
+swift run PicoKitHostTests
 ```
 
 Firmware builds need CMake, Ninja, an Embedded Swift toolchain, and the Pico
@@ -146,11 +159,23 @@ Swift from an IRQ handler.
 
 ```sh
 swift run PicoKitHostTests
+```
+
+The CLI integration and firmware matrix tests live in the separate
+[SwiftPico repository](https://github.com/kyooni18/swiftpico):
+
+```sh
+cd ../SwiftPico
 sh Tests/cli-integration.sh
 # On a firmware toolchain host:
 sh Tests/firmware-matrix.sh
+```
+
+Create and use a project from any working directory:
+
+```sh
 swiftpico init --board pico2_w --name Blink --template blink
-cd ../Blink
+cd Blink
 ./swiftpico build
 ./swiftpico flash
 ./swiftpico monitor --reconnect
