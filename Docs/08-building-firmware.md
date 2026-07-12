@@ -6,13 +6,13 @@
 Build the current project:
 
 ```sh
-./picokit build
+./swiftpico build
 ```
 
 Aliases:
 
 ```sh
-./picokit b
+./swiftpico b
 ```
 
 Options include:
@@ -37,5 +37,5 @@ The CMake build creates a static Swift `PicoKit` library, links it with `PicoKit
 Remove build artifacts with:
 
 ```sh
-./picokit clean
+./swiftpico clean
 ```

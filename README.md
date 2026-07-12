@@ -6,7 +6,7 @@ Swift firmware does not access peripheral registers directly.
 
 ## Architecture
 
-- `Sources/PicoKitCLI`: host CLI for diagnostics, project creation, build,
+- `Sources/SwiftPicoCLI`: host CLI for diagnostics, project creation, build,
   flash, debugging, and serial monitoring.
 - `Sources/PicoKitCore`: Foundation-free validation, units, errors, boards,
   and protocols.
@@ -18,17 +18,39 @@ Swift firmware does not access peripheral registers directly.
 library, then links firmware sources against it. The previous direct-register
 prototype is isolated in `Legacy/UnsafeMMIO` and excluded from every build.
 
+## SwiftPico CLI
+
+Build the standalone project tool from this checkout:
+
+```sh
+swift build -c release --product swiftpico
+```
+
+Then initialize a project from anywhere:
+
+```sh
+swiftpico init --board pico2_w --name Blink --template blink
+```
+
+Initialization creates `Package.swift` with a PicoKit SwiftPM dependency,
+`swiftpico.json` with the board and firmware settings, a `Firmware/CMakeLists.txt`
+entrypoint, and a `swiftpico` project launcher. The Pico SDK submodule is
+initialized when the dependency is resolved. Use `--skip-resolve` for an
+offline scaffold.
+
+The old `picokit` executable remains as a compatibility alias.
+
 ## Requirements
 
 ```sh
 git clone --recurse-submodules https://github.com/kyooni18/PicoKit.git
 cd PicoKit
-swift run picokit doctor
+swift run swiftpico doctor
 ```
 
 Firmware builds need CMake, Ninja, an Embedded Swift toolchain, and the Pico
 SDK's matching cross compiler (`arm-none-eabi-gcc` for the standard Pico and
-Pico 2 ARM builds). `picokit doctor` reports the host-side prerequisites.
+Pico 2 ARM builds). `swiftpico doctor` reports the host-side prerequisites.
 
 ## Firmware API
 
@@ -128,20 +150,20 @@ swift run PicoKitHostTests
 sh Tests/cli-integration.sh
 # On a firmware toolchain host:
 sh Tests/firmware-matrix.sh
-swift run picokit init --board pico2_w --name Blink --template blink
+swift run swiftpico init --board pico2_w --name Blink --template blink
 cd ../Blink
-./picokit build
-./picokit flash
-./picokit monitor --reconnect
+./swiftpico build
+./swiftpico flash
+./swiftpico monitor --reconnect
 ```
 
 Supported canonical boards are `pico`, `pico_w`, `pico2`, and `pico2_w`.
-`pico-w` and `pico2-w` are accepted input aliases. Generated `picokit.json`
-contains the exact CMake board identifier, dynamic product target and UF2 name,
-and the reusable PicoKit checkout path. Templates include `blink`, `serial`,
+`pico-w` and `pico2-w` are accepted input aliases. Generated `swiftpico.json`
+contains the exact CMake board identifier, dynamic product target, UF2 name, and
+PicoKit dependency source. Templates include `blink`, `serial`,
 `adc`, `pwm`, `i2c`, `spi`, `interrupt`, and `watchdog`.
 
-`picokit debug` reads OpenOCD settings from the project config. `picokit doctor`
+`swiftpico debug` reads OpenOCD settings from the project config. `swiftpico doctor`
 reports Swift, CMake, Ninja, SDK bridge, boot volume, and serial devices.
 Use [`Tests/hardware/README.md`](Tests/hardware/README.md) as the required
 physical validation matrix; it is deliberately separate from build validation.

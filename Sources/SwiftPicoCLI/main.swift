@@ -2,12 +2,30 @@ import Foundation
 import PicoKitCore
 
 @main
-struct PicoKitCommand {
+struct SwiftPicoCommand {
+    private static let defaultPicoKitURL = "https://github.com/kyooni18/PicoKit.git"
+    private static let defaultPicoKitBranch = "main"
+
+    private static let firmwareProjectManifest = """
+    cmake_minimum_required(VERSION 3.29)
+
+    if(NOT DEFINED PICOKIT_ROOT)
+        message(FATAL_ERROR "PICOKIT_ROOT must point to the resolved PicoKit package checkout")
+    endif()
+
+    include("${PICOKIT_ROOT}/Firmware/CMakeLists.txt")
+    """
+
+    private static let projectRunner = """
+    #!/bin/sh
+    exec "${SWIFTPICO:-swiftpico}" "$@"
+    """
+
     static func main() {
         do {
             try run(Array(CommandLine.arguments.dropFirst()))
         } catch {
-            FileHandle.standardError.write(Data("picokit: \(error.localizedDescription)\n".utf8))
+            FileHandle.standardError.write(Data("swiftpico: \(error.localizedDescription)\n".utf8))
             Foundation.exit(1)
         }
     }
@@ -44,34 +62,35 @@ struct PicoKitCommand {
         let name = option("--name", in: arguments) ?? "PicoApp"
         let template = option("--template", in: arguments) ?? "blink"
         guard availableTemplates.contains(template) else {
-            throw CLIError.message("unknown template '\(template)'. Run 'picokit template' to list supported templates.")
+                throw CLIError.message("unknown template '\(template)'. Run 'swiftpico template' to list supported templates.")
         }
         let force = arguments.contains("--force")
         let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-        let picoRoot = findPicoKitRoot(from: currentDirectory) ?? ProcessInfo.processInfo.environment["PICOKIT_ROOT"].map { URL(fileURLWithPath: $0, isDirectory: true) }
-        guard let picoRoot else {
-            throw CLIError.message("PicoKit checkout not found. Run init from the PicoKit checkout or set PICOKIT_ROOT to it.")
-        }
+        let picoKitURL = option("--pico-kit-url", in: arguments) ?? Self.defaultPicoKitURL
+        let picoKitBranch = option("--pico-kit-branch", in: arguments) ?? Self.defaultPicoKitBranch
+        let skipResolve = arguments.contains("--skip-resolve")
         let projectRoot: URL
         if let path = option("--path", in: arguments) {
             projectRoot = URL(fileURLWithPath: path, relativeTo: currentDirectory).standardizedFileURL
         } else {
-            projectRoot = picoRoot.deletingLastPathComponent().appendingPathComponent(name, isDirectory: true)
+            projectRoot = currentDirectory.appendingPathComponent(name, isDirectory: true)
         }
         try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
 
-        let configURL = projectRoot.appendingPathComponent("picokit.json")
+        let configURL = projectRoot.appendingPathComponent("swiftpico.json")
         guard force || !FileManager.default.fileExists(atPath: configURL.path) else {
-            throw CLIError.message("picokit.json already exists. Use --force to overwrite.")
+            throw CLIError.message("swiftpico.json already exists. Use --force to overwrite.")
         }
 
         let target = firmwareTargetName(name)
         let config = PicoKitConfig(
             board: board,
             firmwareDirectory: "Firmware",
-            picoSDKPath: picoRoot.appendingPathComponent("Vendor/pico-sdk").standardizedFileURL.path,
-            picoKitPath: picoRoot.path,
-            picotool: picoRoot.appendingPathComponent("Tools/picotool-build/picotool").standardizedFileURL.path,
+            picoSDKPath: nil,
+            picoKitPath: nil,
+            picoKitURL: picoKitURL,
+            picoKitBranch: picoKitBranch,
+            picotool: nil,
             swiftSDK: nil,
             product: name,
             configuration: "release",
@@ -82,6 +101,9 @@ struct PicoKitCommand {
                 : ["interface/cmsis-dap.cfg", "target/rp2040.cfg"]
         )
         try JSONEncoder.pretty.encode(config).write(to: configURL)
+
+        let manifest = projectManifest(name: name, target: target, picoKitURL: picoKitURL, picoKitBranch: picoKitBranch)
+        try manifest.write(to: projectRoot.appendingPathComponent("Package.swift"), atomically: true, encoding: .utf8)
 
         let sourceDir = projectRoot.appendingPathComponent("Sources").appendingPathComponent(name)
         try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
@@ -97,32 +119,41 @@ struct PicoKitCommand {
 
         let firmwareDir = projectRoot.appendingPathComponent("Firmware", isDirectory: true)
         try FileManager.default.createDirectory(at: firmwareDir, withIntermediateDirectories: true)
-        let sourceFirmware = picoRoot.appendingPathComponent("Firmware")
-        for file in ["CMakeLists.txt", "BridgingHeader.h", "PicoKitSDKBridge.h", "PicoKitSDKBridge.c"] {
-            let source = sourceFirmware.appendingPathComponent(file)
-            try FileManager.default.copyItem(at: source, to: firmwareDir.appendingPathComponent(file))
-        }
+        try firmwareProjectManifest.write(
+            to: firmwareDir.appendingPathComponent("CMakeLists.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
 
-        let runner = projectRoot.appendingPathComponent("picokit")
-        try projectRunner(picoKitRoot: picoRoot).write(to: runner, atomically: true, encoding: .utf8)
+        let runner = projectRoot.appendingPathComponent("swiftpico")
+        try projectRunner.write(to: runner, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: runner.path)
+
+        try """
+        .build/
+        Firmware/build/
+        *.uf2
+        """.write(to: projectRoot.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
+
+        if !skipResolve {
+            _ = try installPicoKitDependency(projectRoot: projectRoot)
+        }
 
         print("""
         Project '\(name)' created for board '\(board)'.
         Project directory: \(projectRoot.path)
 
         Files created:
-          - picokit.json
+          - swiftpico.json
+          - Package.swift (PicoKit dependency: \(picoKitURL), branch \(picoKitBranch))
           - \(sourceFile.path)
           - Firmware/CMakeLists.txt
-          - Firmware/BridgingHeader.h
-          - Firmware/PicoKitSDKBridge.c/.h
-          - picokit
+          - swiftpico
 
         Next steps:
           1. cd \(projectRoot.path)
-          2. Run: ./picokit build
-          3. Run: ./picokit flash
+          2. Run: swiftpico build
+          3. Run: swiftpico flash
         """)
     }
 
@@ -137,7 +168,7 @@ struct PicoKitCommand {
                 throw CLIError.message("configuration must be 'debug' or 'release', not '\(configuration)'")
             }
             guard isToolAvailable("arm-none-eabi-gcc") || ProcessInfo.processInfo.environment["PICO_TOOLCHAIN_PATH"] != nil else {
-                throw CLIError.message("arm-none-eabi-gcc was not found. Install the Pico SDK ARM toolchain or set PICO_TOOLCHAIN_PATH, then run 'picokit doctor'.")
+                throw CLIError.message("arm-none-eabi-gcc was not found. Install the Pico SDK ARM toolchain or set PICO_TOOLCHAIN_PATH, then run 'swiftpico doctor'.")
             }
             let firmwareURL = project.url(for: firmwareDirectory)
             let buildDirectory = firmwareURL.appendingPathComponent("build", isDirectory: true)
@@ -148,8 +179,7 @@ struct PicoKitCommand {
             let product = firmwareTargetName(option("--product", in: arguments) ?? config.product ?? "PicoKitFirmware")
             let sourceName = option("--product", in: arguments) ?? config.product ?? "PicoKitFirmware"
             configure += ["-DPICOKIT_PRODUCT=\(product)", "-DPICOKIT_SOURCE=\(project.root.appendingPathComponent("Sources/\(sourceName)/main.swift").path)"]
-            let picoKitRoot = config.picoKitPath.map(project.url(for:)) ?? findPicoKitRoot(from: project.root)
-            guard let picoKitRoot else { throw CLIError.message("PicoKit checkout not found. Set 'picoKitPath' in picokit.json.") }
+            let picoKitRoot = try resolvePicoKitRoot(project: project, config: config)
             configure.append("-DPICOKIT_ROOT=\(picoKitRoot.path)")
             if let picoSDKPath = config.picoSDKPath {
                 let sdkURL = project.url(for: picoSDKPath)
@@ -176,7 +206,7 @@ struct PicoKitCommand {
             return
         }
         guard let sdk = option("--swift-sdk", in: arguments) ?? config.swiftSDK else {
-            throw CLIError.message("no Swift Embedded SDK is configured. Install one, then set 'swiftSDK' in picokit.json or pass --swift-sdk <id>. Refusing to build a host executable that cannot be flashed to \(config.board).")
+            throw CLIError.message("no Swift Embedded SDK is configured. Install one, then set 'swiftSDK' in swiftpico.json or pass --swift-sdk <id>. Refusing to build a host executable that cannot be flashed to \(config.board).")
         }
         var command = ["swift", "build", "-c", option("--configuration", in: arguments) ?? config.configuration]
         command += ["--swift-sdk", sdk]
@@ -211,7 +241,7 @@ struct PicoKitCommand {
         let project = try context(arguments)
         let config = project.config
         let uf2 = option("--uf2", in: arguments) ?? config.uf2
-        guard let uf2 else { throw CLIError.message("set 'uf2' in picokit.json or pass --uf2 path/to/app.uf2") }
+        guard let uf2 else { throw CLIError.message("set 'uf2' in swiftpico.json or pass --uf2 path/to/app.uf2") }
         let source = project.url(for: uf2)
         guard FileManager.default.fileExists(atPath: source.path) else { throw CLIError.message("UF2 file not found: \(source.path)") }
 
@@ -245,7 +275,7 @@ struct PicoKitCommand {
         let config = project.config
         let openOCD = option("--openocd", in: arguments) ?? config.openOCD
         let files = config.openOCDConfig
-        guard !files.isEmpty else { throw CLIError.message("set 'openOCDConfig' in picokit.json (for example interface/cmsis-dap.cfg,target/rp2040.cfg)") }
+        guard !files.isEmpty else { throw CLIError.message("set 'openOCDConfig' in swiftpico.json (for example interface/cmsis-dap.cfg,target/rp2040.cfg)") }
         var command = [openOCD] + files.flatMap { ["-f", $0] }
         if let target = option("--target", in: arguments) {
             command += ["-c", "target remote \(target)"]
@@ -264,7 +294,7 @@ struct PicoKitCommand {
             let devices = serialDevices()
             guard devices.count == 1, let detected = devices.first else {
                 let hint = devices.isEmpty
-                    ? "No serial device found. Connect the Pico, then run 'picokit list'."
+                    ? "No serial device found. Connect the Pico, then run 'swiftpico list'."
                     : "Multiple serial devices found. Pass --device <path>.\n\(devices.map { "  \($0)" }.joined(separator: "\n"))"
                 throw CLIError.message(hint)
             }
@@ -578,9 +608,79 @@ struct PicoKitCommand {
         return safe.isEmpty ? "PicoKitFirmware" : safe
     }
 
+    private static func swiftTargetName(_ product: String) -> String {
+        let safe = product.unicodeScalars.map {
+            CharacterSet.alphanumerics.contains($0) || $0 == "_" ? String($0) : "_"
+        }.joined()
+        guard !safe.isEmpty else { return "PicoApp" }
+        return safe.first?.isNumber == true ? "Pico\(safe)" : safe
+    }
+
+    private static func swiftStringLiteral(_ value: String) -> String {
+        String(reflecting: value)
+    }
+
+    private static func projectManifest(name: String, target: String, picoKitURL: String, picoKitBranch: String) -> String {
+        let packageName = swiftStringLiteral(name)
+        let swiftName = swiftStringLiteral(swiftTargetName(target))
+        let url = swiftStringLiteral(picoKitURL)
+        let branch = swiftStringLiteral(picoKitBranch)
+        return """
+        // swift-tools-version: 6.0
+        import PackageDescription
+
+        let package = Package(
+            name: \(packageName),
+            platforms: [.macOS(.v13)],
+            dependencies: [
+                .package(url: \(url), branch: \(branch))
+            ],
+            targets: [
+                .executableTarget(
+                    name: \(swiftName),
+                    dependencies: [.product(name: "PicoKit", package: "PicoKit")]
+                )
+            ]
+        )
+        """
+    }
+
+    private static func resolvePicoKitRoot(project: ProjectContext, config: PicoKitConfig) throws -> URL {
+        if let configuredPath = config.picoKitPath {
+            let root = project.url(for: configuredPath)
+            guard FileManager.default.fileExists(atPath: root.appendingPathComponent("Package.swift").path) else {
+                throw CLIError.message("PicoKit checkout not found at \(root.path)")
+            }
+            return root
+        }
+
+        return try installPicoKitDependency(projectRoot: project.root)
+    }
+
+    private static func installPicoKitDependency(projectRoot: URL) throws -> URL {
+        let checkout = projectRoot.appendingPathComponent(".build/checkouts/PicoKit", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: checkout.appendingPathComponent("Package.swift").path) {
+            print("Resolving PicoKit dependency…")
+            try runProcess(["swift", "package", "resolve"], currentDirectory: projectRoot)
+        }
+        guard FileManager.default.fileExists(atPath: checkout.appendingPathComponent("Package.swift").path) else {
+            throw CLIError.message("PicoKit dependency was not resolved at \(checkout.path)")
+        }
+
+        let sdk = checkout.appendingPathComponent("Vendor/pico-sdk", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: sdk.appendingPathComponent("CMakeLists.txt").path) {
+            print("Initializing Pico SDK submodule…")
+            try runProcess(["git", "-C", checkout.path, "submodule", "update", "--init", "--recursive"], currentDirectory: projectRoot)
+        }
+        guard FileManager.default.fileExists(atPath: sdk.appendingPathComponent("CMakeLists.txt").path) else {
+            throw CLIError.message("Pico SDK was not initialized inside \(checkout.path)/Vendor/pico-sdk")
+        }
+        return checkout
+    }
+
     private static func validateArguments(command: String, arguments: [String]) throws {
-        let valued: Set<String> = ["--board", "--name", "--template", "--path", "--configuration", "--swift-sdk", "--product", "--uf2", "--volume", "--openocd", "--target", "--device", "--baud", "--context"]
-        let flags: Set<String> = ["--force", "--verbose", "--reconnect"]
+        let valued: Set<String> = ["--board", "--name", "--template", "--path", "--configuration", "--swift-sdk", "--product", "--uf2", "--volume", "--openocd", "--target", "--device", "--baud", "--context", "--pico-kit-url", "--pico-kit-branch"]
+        let flags: Set<String> = ["--force", "--verbose", "--reconnect", "--skip-resolve"]
         var index = 0
         while index < arguments.count {
             let argument = arguments[index]
@@ -604,7 +704,7 @@ struct PicoKitCommand {
         } else if let discovered = findContext(from: currentDirectory) {
             configURL = discovered
         } else {
-            throw CLIError.message("no picokit.json found in this directory or its parents. Run 'picokit init --board pico' first, or pass --context /path/to/picokit.json.")
+            throw CLIError.message("no swiftpico.json or picokit.json found in this directory or its parents. Run 'swiftpico init --board pico' first, or pass --context /path/to/project.json.")
         }
         guard FileManager.default.fileExists(atPath: configURL.path) else {
             throw CLIError.message("project context not found: \(configURL.path)")
@@ -617,8 +717,10 @@ struct PicoKitCommand {
     private static func findContext(from directory: URL) -> URL? {
         var candidate = directory.standardizedFileURL
         while true {
-            let context = candidate.appendingPathComponent("picokit.json")
-            if FileManager.default.fileExists(atPath: context.path) { return context }
+            for name in ["swiftpico.json", "picokit.json"] {
+                let context = candidate.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: context.path) { return context }
+            }
             let parent = candidate.deletingLastPathComponent()
             guard parent.path != candidate.path else { return nil }
             candidate = parent
@@ -658,14 +760,6 @@ struct PicoKitCommand {
             "/usr/bin/swiftc",
         ])
         return candidates.first { fileManager.isExecutableFile(atPath: $0) && !$0.hasSuffix("/.swiftly/bin/swiftc") }
-    }
-
-    private static func projectRunner(picoKitRoot: URL) -> String {
-        let quotedRoot = picoKitRoot.path.replacingOccurrences(of: "'", with: "'\"'\"'")
-        return """
-        #!/bin/sh
-        PICOKIT_ROOT='\(quotedRoot)' exec swift run --package-path '\(quotedRoot)' picokit "$@"
-        """
     }
 
     private static func serialDevices() -> [String] {
@@ -776,12 +870,13 @@ struct PicoKitCommand {
     }
 
     fileprivate static let usage = """
-    PicoKit — Swift Embedded utilities for Raspberry Pi Pico and Pico 2
+    SwiftPico — project tooling for PicoKit and Raspberry Pi Pico/Pico 2
 
     Commands:
       init    [--board BOARD] [--name NAME] [--template TPL] [--force]
-              [--path PATH]
-          Create a standalone sibling project. Run 'picokit template' for templates
+              [--path PATH] [--pico-kit-url URL] [--pico-kit-branch BRANCH]
+              [--skip-resolve]
+          Create a standalone PicoKit project with a SwiftPM dependency
       new     Alias for init
       build, b [--configuration debug|release] [--swift-sdk SDK] [--product P]
               Build the firmware
@@ -802,8 +897,8 @@ struct PicoKitCommand {
 
     Boards: pico, pico_w, pico2, pico2_w (pico-w and pico2-w accepted as input)
 
-    Commands locate picokit.json in the current directory or a parent directory.
-    Generated projects include ./picokit, so use ./picokit build, flash, or monitor.
+    Commands locate swiftpico.json (or legacy picokit.json) in the current directory or a parent directory.
+    Generated projects include ./swiftpico, so use swiftpico build, flash, or monitor.
     """
 }
 
@@ -812,6 +907,8 @@ private struct PicoKitConfig: Codable {
     var firmwareDirectory: String? = nil
     var picoSDKPath: String? = nil
     var picoKitPath: String? = nil
+    var picoKitURL: String? = nil
+    var picoKitBranch: String? = nil
     var picotool: String? = nil
     var swiftSDK: String? = nil
     var product: String? = nil
@@ -837,7 +934,7 @@ private enum CLIError: LocalizedError {
     case message(String)
     var errorDescription: String? {
         switch self {
-        case .usage: PicoKitCommand.usage
+        case .usage: SwiftPicoCommand.usage
         case .message(let text): text
         }
     }

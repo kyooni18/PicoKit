@@ -6,8 +6,13 @@
 Create a project with:
 
 ```sh
-swift run picokit init --board pico2_w --name Blink --template blink
+swift run swiftpico init --board pico2_w --name Blink --template blink
 ```
+
+`swiftpico init` creates a standalone Swift package that depends on
+`https://github.com/kyooni18/PicoKit.git`, writes the board-specific
+`swiftpico.json` configuration, and resolves the Pico SDK submodule required by
+the firmware build. Use `--skip-resolve` when creating an offline scaffold.
 
 `new` is an alias for `init`.
 
@@ -30,12 +35,15 @@ Useful initialization options include:
 --template TEMPLATE
 --path PATH
 --force
+--pico-kit-url URL
+--pico-kit-branch BRANCH
+--skip-resolve
 ```
 
-Generated projects include a local `./picokit` launcher. After creation, commands can be run from the generated project:
+Generated projects include a local `./swiftpico` launcher. After creation, commands can be run from the generated project:
 
 ```sh
-./picokit build
-./picokit flash
-./picokit monitor --reconnect
+./swiftpico build
+./swiftpico flash
+./swiftpico monitor --reconnect
 ```

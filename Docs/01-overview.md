@@ -21,6 +21,6 @@ PicoKit provides:
 - SPI
 - GPIO interrupt event collection
 - Watchdog control
-- A host-side `picokit` command-line tool
+- A host-side `swiftpico` command-line tool
 - High-level Arduino-style convenience functions
 - Low-level throwing APIs for recoverable failures

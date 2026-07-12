@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.29)
 
 # `PICOKIT_ROOT` points at the reusable PicoKit checkout. Generated projects
-# pass it from picokit.json; the in-tree example uses this default.
+# pass it from swiftpico.json; the in-tree example uses this default.
 if(NOT DEFINED PICOKIT_ROOT)
     get_filename_component(PICOKIT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 endif()
@@ -36,7 +36,9 @@ endif()
 
 # Layer 4: the only C target that includes Pico SDK headers. All SDK access is
 # behind fixed-width C functions so embedded Swift never imports SDK inlines.
-add_library(PicoKitSDKBridge STATIC PicoKitSDKBridge.c)
+set(PICOKIT_BRIDGE_DIR "${PICOKIT_ROOT}/Firmware")
+add_library(PicoKitSDKBridge STATIC "${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c")
+target_include_directories(PicoKitSDKBridge PUBLIC "${PICOKIT_BRIDGE_DIR}")
 target_link_libraries(PicoKitSDKBridge PUBLIC pico_stdlib pico_status_led hardware_adc hardware_i2c hardware_pwm hardware_spi hardware_watchdog)
 
 # Layers 2, 1, and public facade. This is a real Swift library; firmware
@@ -98,7 +100,7 @@ target_compile_options(PicoKit PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
     ${CLANG_ARCH_ABI_FLAGS}
     -Xcc -fshort-enums
     -Xfrontend -function-sections
-    -import-bridging-header ${CMAKE_CURRENT_LIST_DIR}/BridgingHeader.h
+    -import-bridging-header ${PICOKIT_BRIDGE_DIR}/BridgingHeader.h
     ${COMPILE_DEFINITIONS}
     ${IMPLICIT_INCLUDES}
 >")

@@ -10,9 +10,9 @@ trap 'rm -rf "$tmp"' EXIT
 
 for board in pico pico_w pico2 pico2_w; do
     project="$tmp/$board"
-    PICOKIT_ROOT="$root" swift run --package-path "$root" picokit init --board "$board" --name MatrixApp --template blink --path "$project"
+    PICOKIT_ROOT="$root" swift run --package-path "$root" swiftpico init --board "$board" --name MatrixApp --template blink --path "$project"
     (
         cd "$project"
-        PICOKIT_ROOT="$root" ./picokit build --configuration release
+        PICOKIT_ROOT="$root" swift run --package-path "$root" swiftpico build --configuration release --context "$project/swiftpico.json"
     )
 done

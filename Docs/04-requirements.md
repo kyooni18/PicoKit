@@ -18,7 +18,7 @@ The Swift package itself declares macOS 13 or newer for its host tools.
 Run the environment diagnostic command from the PicoKit checkout:
 
 ```sh
-swift run picokit doctor
+swift run swiftpico doctor
 ```
 
 The command checks the local Swift installation, CMake, Ninja, ARM cross compiler, SDK bridge, mounted boot volumes, and serial devices.

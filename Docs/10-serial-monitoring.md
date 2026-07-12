@@ -6,13 +6,13 @@
 List detected boot volumes and serial devices:
 
 ```sh
-./picokit list
+./swiftpico list
 ```
 
 Open a serial monitor:
 
 ```sh
-./picokit monitor
+./swiftpico monitor
 ```
 
 Aliases are `serial` and `mon`.
