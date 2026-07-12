@@ -134,6 +134,12 @@ struct PicoKitCommand {
             if config.board.hasPrefix("pico2") {
                 configure.append("-DPICO_PLATFORM=rp2350-arm-s")
             }
+            if let swiftCompiler = swiftCompilerPath() {
+                // Swiftly's ~/.swiftly/bin/swiftc is a dispatch proxy. CMake
+                // invokes the compiler directly, so use the real toolchain
+                // binary to avoid Swiftly recursively dispatching itself.
+                configure.append("-DCMAKE_Swift_COMPILER=\(swiftCompiler)")
+            }
             if arguments.contains("--verbose") {
                 configure.append("-DCMAKE_VERBOSE_MAKEFILE=ON")
             }
@@ -603,6 +609,23 @@ struct PicoKitCommand {
     private static func option(_ name: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else { return nil }
         return arguments[index + 1]
+    }
+
+    private static func swiftCompilerPath() -> String? {
+        let fileManager = FileManager.default
+        var candidates: [String] = []
+        if let explicit = ProcessInfo.processInfo.environment["PICO_SWIFTC"], !explicit.isEmpty {
+            candidates.append(explicit)
+        }
+        if let toolchains = ProcessInfo.processInfo.environment["SWIFTLY_TOOLCHAINS_DIR"] {
+            candidates.append(URL(fileURLWithPath: toolchains)
+                .appendingPathComponent("swift-latest.xctoolchain/usr/bin/swiftc").path)
+        }
+        candidates.append(contentsOf: [
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+            "/usr/bin/swiftc",
+        ])
+        return candidates.first { fileManager.isExecutableFile(atPath: $0) && !$0.hasSuffix("/.swiftly/bin/swiftc") }
     }
 
     private static func findBootVolume() -> URL? {
