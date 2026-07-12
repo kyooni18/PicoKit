@@ -1,18 +1,10 @@
-/// LED control utilities — Arduino-style LED blinking and patterns.
+/// LED control utilities — Arduino-style LED blinking and brightness.
 
-public enum LEDPattern: Sendable {
-    /// Blink on/off at a fixed interval.
-    case blink(periodMs: UInt32, dutyCycle: Double)
-    /// Breathe: smooth fade in and out using PWM.
-    case breathe(periodMs: UInt32)
-    /// Chase: sequential LED animation (for multiple pins).
-    case chase(pins: [Int], stepMs: UInt32)
-}
-
-public final class LEDController {
+public final class LEDController: @unchecked Sendable {
     private let gpio: PicoGPIO
     private let pin: Int
     private let pwmSlice: PicoPWM?
+    private var state: PinState = .low
 
     /// Create an LED controller for a GPIO pin.
     /// If `pwmSlice` is provided, PWM-based brightness control is available.
@@ -25,6 +17,7 @@ public final class LEDController {
 
     /// Turn the LED on.
     public func on() {
+        state = .high
         if let pwm = pwmSlice {
             pwm.analogWrite(UInt8(255))
         } else {
@@ -34,6 +27,7 @@ public final class LEDController {
 
     /// Turn the LED off.
     public func off() {
+        state = .low
         if let pwm = pwmSlice {
             pwm.analogWrite(UInt8(0))
         } else {
@@ -43,13 +37,9 @@ public final class LEDController {
 
     /// Toggle the LED state.
     public func toggle() {
+        state = state.toggled
         if let pwm = pwmSlice {
-            // Toggle between max and zero
-            if gpio.digitalRead(pin) == .high {
-                pwm.analogWrite(UInt8(0))
-            } else {
-                pwm.analogWrite(UInt8(255))
-            }
+            pwm.analogWrite(state == .high ? UInt8(255) : UInt8(0))
         } else {
             gpio.toggle(pin)
         }
@@ -58,11 +48,16 @@ public final class LEDController {
     /// Set PWM brightness (0-255).
     public func setBrightness(_ value: UInt8) {
         guard let pwm = pwmSlice else {
-            gpio.digitalWrite(pin, value > 127 ? .high : .low)
+            state = value > 127 ? .high : .low
+            gpio.digitalWrite(pin, state)
             return
         }
+        state = value == 0 ? .low : .high
         pwm.analogWrite(value)
     }
+
+    /// The last state requested through this controller.
+    public var isOn: Bool { state.isHigh }
 
     /// Blink the LED: on for `onMs` ms, off for `offMs` ms, repeated `count` times.
     @discardableResult

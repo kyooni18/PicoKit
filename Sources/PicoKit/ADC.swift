@@ -9,7 +9,7 @@
 ///
 /// Resolution is 12-bit (0…4095).
 
-public enum ADCChannel: Int, Sendable {
+public enum ADCChannel: Int, CaseIterable, Sendable {
     case gpio26 = 0
     case gpio27 = 1
     case gpio28 = 2
@@ -55,9 +55,15 @@ public final class PicoADC: @unchecked Sendable {
         return UInt16(read(Self.base + 0x08) & 0xFFF)
     }
 
-    /// Read voltage in millivolts (assuming 3.3V reference).
-    public func readVoltage() -> Float {
+    /// Read the input voltage in millivolts, assuming a 3.3 V reference.
+    public func readMillivolts() -> Float {
         Float(readRaw()) * 3300.0 / 4095.0
+    }
+
+    /// Read the input voltage in millivolts.
+    @available(*, deprecated, renamed: "readMillivolts()")
+    public func readVoltage() -> Float {
+        readMillivolts()
     }
 
     /// Read approximate temperature in degrees Celsius.
@@ -84,8 +90,13 @@ public final class PicoADC: @unchecked Sendable {
 
     /// Set ADC clock divider for sampling rate control.
     /// adcClock = sysClock / (div + 1). Max adc clock is 45 MHz.
-    public func setDivider(_ div: UInt32) {
-        write(Self.base + 0x0C, div) // ADC_DIV
+    public func setClockDivider(_ divider: UInt32) {
+        write(Self.base + 0x0C, divider) // ADC_DIV
+    }
+
+    @available(*, deprecated, renamed: "setClockDivider(_:)")
+    public func setDivider(_ divider: UInt32) {
+        setClockDivider(divider)
     }
 
     @inline(__always) private func read(_ address: Int) -> UInt32 {

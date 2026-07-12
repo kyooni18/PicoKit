@@ -23,7 +23,7 @@ public final class SoftwareI2C: @unchecked Sendable {
     }
 
     private var halfPeriodUs: UInt32 {
-        UInt32(500_000 / speed.kHz / 2)
+        max(1, 500_000 / speed.hertz)
     }
 
     /// Generate a START condition.

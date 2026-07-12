@@ -1,6 +1,6 @@
 /// Button and input utilities — debounced digital reading and edge detection.
 
-public struct ButtonConfig: Sendable {
+public struct ButtonConfig: Hashable, Sendable {
     /// GPIO pin the button is connected to.
     public var pin: Int
     /// Active state: `.low` for pull-up buttons, `.high` for pull-down.
@@ -15,46 +15,53 @@ public struct ButtonConfig: Sendable {
     }
 }
 
-public final class Button {
-    private let config: ButtonConfig
+public final class Button: @unchecked Sendable {
+    public let config: ButtonConfig
     private let gpio: PicoGPIO
-    private var lastState: PinState = .low
+    private var stableState: PinState
+    private var rawState: PinState
     private var lastChangeTime: UInt64 = 0
 
     public init(_ config: ButtonConfig, using gpio: PicoGPIO) {
         self.config = config
         self.gpio = gpio
         gpio.pinMode(config.pin, .input)
+        let initialState = gpio.digitalRead(config.pin)
+        stableState = initialState
+        rawState = initialState
         lastChangeTime = millis()
+    }
+
+    private func update() -> PinState {
+        let raw = gpio.digitalRead(config.pin)
+        let now = millis()
+
+        if raw != rawState {
+            rawState = raw
+            lastChangeTime = now
+        }
+        if rawState != stableState, now - lastChangeTime >= config.debounceMs {
+            stableState = rawState
+        }
+        return stableState
     }
 
     /// Read the debounced button state.
     /// Returns `.high` if the button is currently pressed (active).
     public func read() -> PinState {
-        let raw = gpio.digitalRead(config.pin)
-        let now = millis()
-
-        if raw != lastState {
-            if now - lastChangeTime >= config.debounceMs {
-                lastState = raw
-                lastChangeTime = now
-            }
-        }
-
-        return lastState == config.activeState ? .high : .low
+        update() == config.activeState ? .high : .low
     }
 
-    /// Check if the button was just pressed (rising edge detection with debounce).
+    /// Whether the button is currently pressed.
+    public var isPressed: Bool {
+        read().isHigh
+    }
+
+    /// Check for a debounced transition into the pressed state.
     @discardableResult
     public func wasPressed() -> Bool {
-        let current = read()
-        if current == .high {
-            let now = millis()
-            if now - lastChangeTime < 200 {
-                return true
-            }
-        }
-        return false
+        let previous = stableState
+        return update() == config.activeState && previous != config.activeState
     }
 
     /// Wait until the button is pressed (blocking).
@@ -69,7 +76,7 @@ public final class Button {
 }
 
 /// Convenience: check if a pin has gone high since last call.
-public final class EdgeDetector {
+public final class EdgeDetector: @unchecked Sendable {
     private var lastValue: Bool = false
 
     public init() {}

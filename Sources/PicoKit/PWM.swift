@@ -4,18 +4,21 @@
 /// Arduino-style duty-cycle control, or manipulate slices directly for
 /// precise frequency and phase control.
 
-public enum PWMPhaseCorrect: Sendable {
+public enum PWMMode: CaseIterable, Sendable {
     /// Standard PWM: output follows counter vs. top comparison.
     case normal
     /// Phase-correct PWM: counter counts up then down for symmetric waveforms.
     case phaseCorrect
 }
 
+@available(*, deprecated, renamed: "PWMMode")
+public typealias PWMPhaseCorrect = PWMMode
+
 /// One of the eight PWM slices on the Pico.
-public struct PWMSlice: Sendable {
-    public var index: Int
-    public var gpioA: Int
-    public var gpioB: Int
+public struct PWMSlice: Hashable, Sendable {
+    public let index: Int
+    public let gpioA: Int
+    public let gpioB: Int
 
     public init(index: Int, gpioA: Int, gpioB: Int) {
         self.index = index
@@ -96,7 +99,7 @@ public final class PicoPWM: @unchecked Sendable {
     }
 
     /// Set phase-correct mode.
-    public func setMode(_ mode: PWMPhaseCorrect) {
+    public func setMode(_ mode: PWMMode) {
         writeSlice(slice.index, offset: 0x0C, value: mode == .phaseCorrect ? 1 : 0)
     }
 

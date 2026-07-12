@@ -1,12 +1,17 @@
-/// Names and default details used by the `picokit` host tool and firmware
-/// examples. Pico and Pico W use RP2040; Pico 2 and Pico 2 W use RP2350.
+/// The microcontroller family used by a Pico board.
+public enum PicoChip: String, CaseIterable, Sendable {
+    case rp2040
+    case rp2350
+}
+
+/// Supported Raspberry Pi Pico boards.
 public enum PicoBoard: String, CaseIterable, Sendable {
     case pico
     case picoW = "pico-w"
     case pico2
     case pico2W = "pico2_w"
 
-    public var chip: PicoGPIO.Chip {
+    public var chip: PicoChip {
         switch self {
         case .pico, .picoW: .rp2040
         case .pico2, .pico2W: .rp2350

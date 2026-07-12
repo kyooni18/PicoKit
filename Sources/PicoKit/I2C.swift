@@ -2,18 +2,13 @@
 ///
 /// Supports I2C0 and I2C1 with standard (100 kHz) and fast (400 kHz) modes.
 
-public enum I2CBusSpeed: Sendable {
-    case standard   // 100 kHz
-    case `fast`     // 400 kHz
-    case fastPlus   // 1 MHz
+public enum I2CBusSpeed: UInt32, CaseIterable, Sendable {
+    case standard = 100_000
+    case `fast` = 400_000
+    case fastPlus = 1_000_000
 
-    var kHz: UInt32 {
-        switch self {
-        case .standard: 100
-        case .fast: 400
-        case .fastPlus: 1000
-        }
-    }
+    /// Bus frequency in hertz.
+    public var hertz: UInt32 { rawValue }
 }
 
 public final class PicoI2C: @unchecked Sendable {
@@ -42,8 +37,8 @@ public final class PicoI2C: @unchecked Sendable {
     private func configure(speed: I2CBusSpeed, clockHz: UInt32) {
         // I2C_IC_CON: enable, 7-bit addressing
         write(0x00, (1 << 1) | 1)
-        // Calculate divider: div = clockHz / (speed * 1000 * 2) — approximate
-        let divider = clockHz / (speed.kHz * 1000)
+        // High and low counts together form one SCL period.
+        let divider = max(1, clockHz / (speed.hertz * 2))
         write(0x6C, UInt32(divider)) // I2C_IC_SS_SCL_HCNT
         write(0x70, UInt32(divider)) // I2C_IC_SS_SCL_LCNT
     }

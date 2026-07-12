@@ -2,40 +2,16 @@
 ///
 /// Supports SPI0 and SPI1. Configure MOSI, MISO, SCK, and CS pins before use.
 
-public enum SPIBitOrder: Sendable {
+public enum SPIBitOrder: CaseIterable, Sendable {
     case msbFirst
     case lsbFirst
 }
 
-public enum SPIMode: Sendable {
-    case mode0 // CPOL=0, CPHA=0
-    case mode1 // CPOL=0, CPHA=1
-    case mode2 // CPOL=1, CPHA=0
-    case mode3 // CPOL=1, CPHA=1
-
-    var cpol: UInt32 { rawValue & 0x2 }
-    var cpha: UInt32 { rawValue & 0x1 }
-
-}
-
-extension SPIMode: RawRepresentable {
-    public init(rawValue: UInt32) {
-        switch rawValue {
-        case 0: self = .mode0
-        case 1: self = .mode1
-        case 2: self = .mode2
-        default: self = .mode3
-        }
-    }
-
-    public var rawValue: UInt32 {
-        switch self {
-        case .mode0: 0
-        case .mode1: 1
-        case .mode2: 2
-        case .mode3: 3
-        }
-    }
+public enum SPIMode: UInt32, CaseIterable, Sendable {
+    case mode0 = 0 // CPOL=0, CPHA=0
+    case mode1 = 1 // CPOL=0, CPHA=1
+    case mode2 = 2 // CPOL=1, CPHA=0
+    case mode3 = 3 // CPOL=1, CPHA=1
 }
 
 public final class PicoSPI: @unchecked Sendable {

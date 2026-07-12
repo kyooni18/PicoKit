@@ -1,6 +1,6 @@
 /// Watchdog timer for RP2040/RP2350.
 ///
-/// The watchdog forces a reset if not喂 (pet/kick) within the timeout period.
+/// The watchdog forces a reset unless it is fed before its timeout expires.
 /// Default timeout is 1 second.
 
 public final class PicoWatchdog: @unchecked Sendable {
@@ -9,7 +9,7 @@ public final class PicoWatchdog: @unchecked Sendable {
 
     /// WD_CTRL register offset.
     private static let ctrlOffset = 0x04
-    /// WD喂 register offset (write 0xA7B8 to feed).
+    /// Watchdog feed register offset (write 0xA7B8 to feed).
     private static let feedOffset = 0x00
 
     /// Default timeout in microseconds.

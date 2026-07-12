@@ -50,6 +50,20 @@ serial.print("Hello from Swift Embedded")
 USB CDC, a UART driver, a buffer, or a test fake. `PicoUART` is a minimal PL011
 driver intended for the default 48 MHz peripheral clock.
 
+## Public API
+
+The public surface is intentionally small. Use `PicoBoard` and `PicoChip` for
+board selection; `PicoGPIO`, `PicoADC`, `PicoPWM`, `PicoI2C`, `PicoSPI`, and
+`PicoUART` for peripherals; and the Arduino-style `digitalWrite`, `analogRead`,
+`delay`, `millis`, and `micros` helpers for simple sketches.
+
+Configuration values are iterable value types: `PinMode`, `PinState`,
+`ADCChannel`, `I2CBusSpeed`, `SPIBitOrder`, `SPIMode`, and `PWMMode`.
+`PicoADC.readMillivolts()` makes its unit explicit, and `ElapsedTimer` is the
+non-blocking elapsed-time helper. The older `readVoltage()`, `setDivider(_:)`,
+`PWMPhaseCorrect`, and `Millis` spellings remain as deprecated compatibility
+aliases.
+
 ## Host workflow
 
 Keep new firmware projects beside the PicoKit checkout. Running `init` from the

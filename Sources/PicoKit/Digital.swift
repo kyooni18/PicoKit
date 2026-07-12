@@ -1,15 +1,21 @@
 /// Arduino-style digital I/O primitives that work with a real Pico GPIO
 /// controller or a test double.
-public enum PinMode: Sendable {
+public enum PinMode: CaseIterable, Sendable {
     case input
     case output
 }
 
-public enum PinState: Sendable, Equatable {
+public enum PinState: CaseIterable, Sendable {
     case low
     case high
 
     public var toggled: Self { self == .low ? .high : .low }
+
+    public var isHigh: Bool { self == .high }
+
+    public init(_ isHigh: Bool) {
+        self = isHigh ? .high : .low
+    }
 }
 
 /// The small surface needed by `pinMode`, `digitalWrite`, and `digitalRead`.
@@ -39,10 +45,8 @@ public protocol DigitalIO: AnyObject {
 /// It deliberately has no dependency on Foundation, so it can be imported by
 /// an Embedded Swift firmware target. Create it only on the microcontroller.
 public final class PicoGPIO: DigitalIO, @unchecked Sendable {
-    public enum Chip: Sendable {
-        case rp2040
-        case rp2350
-    }
+    /// Compatibility spelling for `PicoChip`.
+    public typealias Chip = PicoChip
 
     public static let rp2040 = PicoGPIO(chip: .rp2040)
     public static let rp2350 = PicoGPIO(chip: .rp2350)

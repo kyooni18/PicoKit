@@ -59,7 +59,7 @@ public final class PicoTimer: @unchecked Sendable {
 }
 
 /// Non-blocking millisecond timer — Arduino `millis()` compatible.
-public struct Millis: Sendable {
+public struct ElapsedTimer: Sendable {
     private var start: UInt64
 
     /// Create a new timer anchored to the current system time.
@@ -87,6 +87,9 @@ public struct Millis: Sendable {
         elapsed() >= ms
     }
 }
+
+@available(*, deprecated, renamed: "ElapsedTimer")
+public typealias Millis = ElapsedTimer
 
 /// Arduino-style global delay functions.
 public func delay(_ ms: UInt32) {
