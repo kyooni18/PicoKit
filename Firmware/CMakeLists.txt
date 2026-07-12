@@ -18,10 +18,16 @@ endif()
 include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 project(PicoKitFirmware)
 pico_sdk_init()
-enable_language(Swift)
 
 set(CMAKE_Swift_COMPILATION_MODE wholemodule)
-set(CMAKE_Swift_COMPILER_WORKS YES)
+# CMake's Swift compiler probe links a host macOS executable. That probe is
+# incompatible with the Embedded Swift toolchain: it can compile an object,
+# but it must not try to link against the host `System` library. Mark the
+# compiler as usable before enable_language(Swift), where CMake performs the
+# probe. The actual firmware targets below still compile with the embedded
+# target and are checked by the real build.
+set(CMAKE_Swift_COMPILER_WORKS YES CACHE INTERNAL "Embedded Swift compiler is usable")
+enable_language(Swift)
 
 set(SWIFT_TARGET "armv6m-none-none-eabi")
 if(PICO_PLATFORM STREQUAL "rp2350-arm-s")
@@ -107,6 +113,15 @@ target_compile_options(PicoKit PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
 
 add_executable(${PICOKIT_PRODUCT} ${PICOKIT_SOURCE})
 set_target_properties(${PICOKIT_PRODUCT} PROPERTIES LINKER_LANGUAGE CXX)
+target_compile_definitions(${PICOKIT_PRODUCT} PRIVATE
+    PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
+    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
+)
+target_compile_options(${PICOKIT_PRODUCT} PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
+    -target ${SWIFT_TARGET}
+    -enable-experimental-feature Embedded
+    -parse-as-library
+>")
 target_link_libraries(${PICOKIT_PRODUCT} PRIVATE PicoKit)
 pico_enable_stdio_usb(${PICOKIT_PRODUCT} 1)
 pico_enable_stdio_uart(${PICOKIT_PRODUCT} 0)

@@ -7,6 +7,6 @@
     "target\/rp2350.cfg"
   ],
   "firmwareDirectory" : "Firmware",
-  "product" : "Blink",
-  "uf2" : "Firmware\/build\/Blink.uf2"
+  "product" : "Serial",
+  "uf2" : "Firmware\/build\/Serial.uf2"
 }

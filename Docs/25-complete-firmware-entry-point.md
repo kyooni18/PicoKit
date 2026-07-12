@@ -54,3 +54,23 @@ struct App {
     }
 }
 ```
+
+The repository includes the same pattern as a dedicated USB serial smoke test
+at `Sources/Serial/main.swift`. Build it by overriding the application source
+and product, then monitor the board at 115200 baud:
+
+```sh
+cmake -S Firmware -B Firmware/build-serial -G Ninja \
+  -DPICO_BOARD=pico2_w \
+  -DPICOKIT_PRODUCT=Serial \
+  -DPICOKIT_SOURCE="$PWD/Sources/Serial/main.swift"
+cmake --build Firmware/build-serial --parallel
+```
+
+After flashing `Firmware/build-serial/Serial.uf2`, the USB serial output is:
+
+```text
+PicoKit Serial example: ready
+serial heartbeat 0
+serial heartbeat 1
+```

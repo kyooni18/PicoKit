@@ -1,5 +1,7 @@
 #include "PicoKitSDKBridge.h"
 
+#include <malloc.h>
+
 #include "hardware/adc.h"
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
@@ -10,6 +12,16 @@
 #include "hardware/watchdog.h"
 #include "pico/stdlib.h"
 #include "pico/status_led.h"
+
+// Embedded Swift expects POSIX's aligned-allocation entry point. Newlib's
+// bare-metal build exposes the equivalent allocator as memalign instead.
+int posix_memalign(void **pointer, size_t alignment, size_t size) {
+    if (!pointer || alignment == 0 || (alignment & (alignment - 1)) != 0) return 22;
+    void *allocated = memalign(alignment, size);
+    if (!allocated) return 12;
+    *pointer = allocated;
+    return 0;
+}
 
 static volatile uint32_t picokit_interrupt_events[30];
 
@@ -79,7 +91,7 @@ int32_t picokit_pwm_init(uint32_t pin, uint32_t frequency_hz) {
 }
 void picokit_pwm_set_level(uint32_t pin, uint16_t level) {
     uint slice = pwm_gpio_to_slice_num(pin);
-    uint32_t wrap = pwm_get_wrap(slice);
+    uint32_t wrap = pwm_hw->slice[slice].top;
     uint32_t scaled = ((uint32_t)level * (wrap + 1u)) / UINT16_MAX;
     pwm_set_gpio_level(pin, scaled > wrap ? wrap : scaled);
 }

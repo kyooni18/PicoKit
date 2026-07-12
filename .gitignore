@@ -2,5 +2,8 @@
 .swiftpm/
 DerivedData/
 *.DS_Store
-Firmware/build/
+# CMake/Ninja firmware output, including alternate build directories such as
+# Firmware/build-serial/.
+Firmware/build*/
+Firmware/**/*.log
 Tools/picotool-build/

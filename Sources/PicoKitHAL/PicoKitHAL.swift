@@ -206,17 +206,8 @@ public final class PicoSerial: @unchecked Sendable {
         write(text)
     }
 
-    public func print<T>(_ value: T) {
-        print(String(describing: value))
-    }
-
     public func println(_ text: String = "") {
         write(text)
-        write("\n")
-    }
-
-    public func println<T>(_ value: T) {
-        print(value)
         write("\n")
     }
 }
