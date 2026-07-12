@@ -36,5 +36,6 @@ This documentation is divided into the following files:
 30. [Command reference](30-command-reference.md)
 31. [API summary](31-api-summary.md)
 32. [Recommended API selection](32-recommended-api-selection.md)
+33. [High-level API](33-high-level-api.md)
 
 Each chapter is a standalone Markdown file and may be read independently.

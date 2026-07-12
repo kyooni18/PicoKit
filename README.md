@@ -104,6 +104,9 @@ while true {
 }
 ```
 
+See [the high-level API guide](Docs/33-high-level-api.md) for complete sketch,
+serial, timing, testing, and low-level comparison examples.
+
 The same API is available on an explicit `Pico` runtime, which is convenient
 for tests and alternate GPIO implementations:
 
