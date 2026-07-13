@@ -39,6 +39,11 @@ followed by your application executable. If the build fails before compiling
 Swift, `swiftpico doctor` is usually the fastest way to spot a missing host
 tool.
 
+The firmware build includes every `.swift` file under `Sources/<YourApp>/`,
+including subdirectories. Keep `main.swift` as the top-level firmware entry
+point, then split types and helpers into files such as `Sensors.swift` or
+`Drivers/I2CDevice.swift`; `./swiftpico build` picks them up automatically.
+
 To start over with a clean firmware build directory:
 
 ```sh

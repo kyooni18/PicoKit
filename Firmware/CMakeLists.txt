@@ -14,6 +14,17 @@ endif()
 if(NOT DEFINED PICOKIT_SOURCE)
     set(PICOKIT_SOURCE "${PICOKIT_ROOT}/Sources/Blink/main.swift")
 endif()
+# PICOKIT_SOURCE remains the backwards-compatible entry-point hint used by
+# SwiftPico. Compile every Swift file in that application's directory so a
+# sketch can be split into ordinary source files and subdirectories. Callers
+# that need a different selection can pass PICOKIT_SOURCES explicitly.
+if(NOT DEFINED PICOKIT_SOURCES)
+    get_filename_component(PICOKIT_SOURCE_DIRECTORY "${PICOKIT_SOURCE}" DIRECTORY)
+    file(GLOB_RECURSE PICOKIT_SOURCES CONFIGURE_DEPENDS "${PICOKIT_SOURCE_DIRECTORY}/*.swift")
+endif()
+if(NOT PICOKIT_SOURCES)
+    message(FATAL_ERROR "No Swift sources found for PICOKIT_SOURCE: ${PICOKIT_SOURCE}")
+endif()
 
 if(NOT DEFINED PICOKIT_SDK_IMPORTED)
     include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
@@ -120,7 +131,7 @@ target_compile_options(PicoKit PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
     ${IMPLICIT_INCLUDES}
 >")
 
-add_executable(${PICOKIT_PRODUCT} ${PICOKIT_SOURCE})
+add_executable(${PICOKIT_PRODUCT} ${PICOKIT_SOURCES})
 set_target_properties(${PICOKIT_PRODUCT} PROPERTIES LINKER_LANGUAGE CXX)
 target_compile_definitions(${PICOKIT_PRODUCT} PRIVATE
     PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
