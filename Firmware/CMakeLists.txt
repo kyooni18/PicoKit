@@ -25,6 +25,8 @@ endif()
 pico_sdk_init()
 
 set(CMAKE_Swift_COMPILATION_MODE wholemodule)
+set(PICOKIT_SWIFT_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/picokit-swift-modules")
+file(MAKE_DIRECTORY "${PICOKIT_SWIFT_MODULE_DIRECTORY}")
 # CMake's Swift compiler probe links a host macOS executable. That probe is
 # incompatible with the Embedded Swift toolchain: it can compile an object,
 # but it must not try to link against the host `System` library. Mark the
@@ -66,7 +68,9 @@ target_link_libraries(PicoKit PUBLIC PicoKitSDKBridge)
 # it needs, but never raw C compiler flags.
 set_target_properties(pico_standard_link PROPERTIES INTERFACE_COMPILE_OPTIONS "")
 target_compile_options(pico_standard_link INTERFACE "$<$<COMPILE_LANGUAGE:C>:SHELL: -ffunction-sections -fdata-sections>")
-set_target_properties(pico_float_pico_vfp PROPERTIES INTERFACE_COMPILE_OPTIONS "")
+if(TARGET pico_float_pico_vfp)
+    set_target_properties(pico_float_pico_vfp PROPERTIES INTERFACE_COMPILE_OPTIONS "")
+endif()
 
 set_property(GLOBAL PROPERTY picokit_visited_targets "")
 set_property(GLOBAL PROPERTY picokit_compile_definitions "")
@@ -126,8 +130,63 @@ target_compile_options(${PICOKIT_PRODUCT} PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:S
     -target ${SWIFT_TARGET}
     -enable-experimental-feature Embedded
     -parse-as-library
+    -I ${PICOKIT_SWIFT_MODULE_DIRECTORY}
 >")
 target_link_libraries(${PICOKIT_PRODUCT} PRIVATE PicoKit)
 pico_enable_stdio_usb(${PICOKIT_PRODUCT} 1)
 pico_enable_stdio_uart(${PICOKIT_PRODUCT} 0)
 pico_add_extra_outputs(${PICOKIT_PRODUCT})
+
+# Add a small, explicit extension point for application dependencies.  A
+# project's Firmware/Dependencies.cmake can use this helper after including
+# this file to compile a Swift package target for the same embedded platform:
+#
+#   picokit_add_swift_library(Foo SOURCE_DIR ".../Sources/Foo")
+#   target_link_libraries(${PICOKIT_PRODUCT} PRIVATE Foo)
+#
+# C/C++ packages do not need a wrapper: add them with FetchContent or
+# add_subdirectory in Dependencies.cmake, then link their CMake target to the
+# application in the same way.
+function(picokit_add_swift_library target)
+    cmake_parse_arguments(ARG "" "SOURCE_DIR" "SOURCES;LINK_LIBRARIES" ${ARGN})
+    if(ARG_SOURCE_DIR AND ARG_SOURCES)
+        message(FATAL_ERROR "picokit_add_swift_library accepts SOURCE_DIR or SOURCES, not both")
+    endif()
+    if(ARG_SOURCE_DIR)
+        file(GLOB_RECURSE ARG_SOURCES CONFIGURE_DEPENDS "${ARG_SOURCE_DIR}/*.swift")
+    endif()
+    if(NOT ARG_SOURCES)
+        message(FATAL_ERROR "picokit_add_swift_library(${target}) has no Swift sources")
+    endif()
+
+    add_library(${target} STATIC ${ARG_SOURCES})
+    set_target_properties(${target} PROPERTIES
+        LINKER_LANGUAGE CXX
+        Swift_MODULE_NAME ${target}
+        Swift_MODULE_DIRECTORY "${PICOKIT_SWIFT_MODULE_DIRECTORY}"
+    )
+    target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
+        -target ${SWIFT_TARGET}
+        -enable-experimental-feature Embedded
+        -parse-as-library
+        -I ${PICOKIT_SWIFT_MODULE_DIRECTORY}
+        ${CLANG_ARCH_ABI_FLAGS}
+        -Xcc -fshort-enums
+        -Xfrontend -function-sections
+        ${COMPILE_DEFINITIONS}
+        ${IMPLICIT_INCLUDES}
+    >")
+    if(ARG_LINK_LIBRARIES)
+        target_link_libraries(${target} PUBLIC ${ARG_LINK_LIBRARIES})
+    endif()
+endfunction()
+
+# A firmware project's dependencies live next to its CMakeLists.txt by
+# default. A caller that keeps them elsewhere can set PICOKIT_DEPENDENCIES_FILE
+# before including this file.
+if(NOT DEFINED PICOKIT_DEPENDENCIES_FILE)
+    set(PICOKIT_DEPENDENCIES_FILE "${CMAKE_SOURCE_DIR}/Dependencies.cmake")
+endif()
+if(EXISTS "${PICOKIT_DEPENDENCIES_FILE}")
+    include("${PICOKIT_DEPENDENCIES_FILE}")
+endif()

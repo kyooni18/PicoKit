@@ -191,3 +191,11 @@ and PicoKit dependency source. Start with `blink` or `serial`, then explore the
 reports Swift, CMake, Ninja, SDK bridge, boot volume, and serial devices.
 Use [`Tests/hardware/README.md`](Tests/hardware/README.md) as the required
 physical validation matrix; it is deliberately separate from build validation.
+
+## External libraries
+
+PicoKit firmware projects can fetch C dependencies with CMake and compile
+Embedded Swift package targets through the extension points described in [the
+external-library guide](Docs/34-external-libraries.md). Keep the dependency
+CMake file in the project so the precise targets and source directories linked
+into firmware remain reviewable.

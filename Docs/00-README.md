@@ -40,5 +40,6 @@ them.
 31. [API summary](31-api-summary.md)
 32. [Recommended API selection](32-recommended-api-selection.md)
 33. [High-level API](33-high-level-api.md)
+34. [External libraries](34-external-libraries.md)
 
 Each chapter is a standalone Markdown file and may be read independently.
