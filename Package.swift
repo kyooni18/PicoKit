@@ -18,6 +18,10 @@ let package = Package(
         // A Foundation-free host validation executable. Some embedded Swift
         // toolchains omit XCTest/Swift Testing, so this remains runnable in
         // the same toolchain used to generate firmware.
-        .executableTarget(name: "PicoKitHostTests", dependencies: ["PicoKit"], path: "Tests/HostTests"),
+        .executableTarget(
+            name: "PicoKitHostTests",
+            dependencies: ["PicoKit", "PicoKitHAL"],
+            path: "Tests/HostTests"
+        ),
     ]
 )

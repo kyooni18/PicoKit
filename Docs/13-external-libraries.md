@@ -1,6 +1,6 @@
 # PicoKit Documentation
 
-## Chapter 34: External libraries
+## External libraries
 
 Add a library to the normal SwiftPM development build, then describe its
 firmware integration in a project-local `Firmware/Dependencies.cmake` file.

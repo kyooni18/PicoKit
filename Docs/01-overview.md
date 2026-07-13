@@ -1,6 +1,6 @@
 # PicoKit Documentation
 
-## Chapter 1: Overview
+## Overview, boards, and architecture
 
 
 PicoKit is an Embedded Swift library and a small command-line workflow for
@@ -33,3 +33,34 @@ Start with the high-level facade for a small blinking or serial sketch. Reach
 for the lower-level types when you need explicit ownership, timeouts, or a way
 to recover from an error. For project setup and flashing, use the separate
 SwiftPico command-line tool.
+
+The package exports the `PicoKit` library. Project creation, build, flash, and
+monitor commands live in the separate
+[SwiftPico repository](https://github.com/kyooni18/swiftpico).
+
+### Boards and requirements
+
+| Board | Configuration | Chip |
+|---|---|---|
+| Pico | `pico` | RP2040 |
+| Pico W | `pico_w` | RP2040 |
+| Pico 2 | `pico2` | RP2350 |
+| Pico 2 W | `pico2_w` | RP2350 |
+
+`pico-w` and `pico2-w` are accepted configuration aliases. Use `BoardLED`
+for an onboard LED: unlike a fixed GPIO25 assumption, it uses the SDK's
+board-aware status-LED support.
+
+You need a Swift 6-compatible Embedded Swift toolchain, CMake 3.29+, Ninja,
+the Pico SDK, and the matching cross compiler (`arm-none-eabi-gcc` for the ARM
+targets). SwiftPico host tools require macOS 13+. Run `swiftpico doctor` to
+check the toolchain, SDK bridge, boot volumes, and serial devices.
+
+### Layers
+
+`PicoKitCore` contains Foundation-free values, validation, errors, and the
+`DigitalIO` protocol. `PicoKitHAL` exposes hardware operations. `PicoKit` is
+the umbrella module imported by applications. `Firmware/PicoKitSDKBridge.c` is
+the sole Pico SDK boundary; it keeps SDK macros and inline functions out of
+Swift code. Host builds compile the API without that bridge, so hardware calls
+report `PicoKitError.unavailable` instead of pretending a board exists.

@@ -6,6 +6,8 @@
 // compiling the PicoKit library, never application sources directly.
 void picokit_stdio_init(void);
 void picokit_stdio_write(const char *text);
+void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count);
+int32_t picokit_stdio_read(uint8_t *byte, uint64_t timeout_us);
 int32_t picokit_uart_init(uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx);
 int32_t picokit_uart_write(uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us);
 int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us);

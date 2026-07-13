@@ -1,6 +1,6 @@
 # PicoKit Documentation
 
-## Chapter 14: GPIO
+## GPIO, board LED, and timing
 
 
 ### Low-level GPIO
@@ -73,3 +73,20 @@ runtime.digitalWrite(3, .high)
 
 This is useful for host tests and GPIO expanders. Your sketch can stay the same
 while the implementation behind it changes.
+
+### Board LED and timing
+
+Use the board-aware SDK status LED when the firmware should not assume a fixed
+GPIO number:
+
+```swift
+let led = try BoardLED(board: .pico2W)
+try led.set(.high)
+try led.toggle()
+```
+
+For time, `Clock.now()` returns monotonic microseconds and
+`try Clock.sleep(for: .milliseconds(500))` blocks the current core. Low-level
+helpers are `try delay(500)`, `try delayMicroseconds(10)`, `millis()`, and
+`micros()`. Sketch helpers are `sleep(500)` and `sleepMicroseconds(10)`.
+Keep every blocking delay out of interrupt handlers.

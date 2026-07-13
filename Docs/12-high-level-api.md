@@ -1,6 +1,6 @@
 # PicoKit Documentation
 
-## Chapter 33: High-level API
+## High-level API
 
 The high-level API is the place to start when the firmware is a small sketch:
 an LED, a button, a sensor, and a serial log. It avoids `try`, optional
@@ -56,13 +56,13 @@ messages:
 ```swift
 Serial.write("booting")
 Serial.print("count = ")
-Serial.println(42)
+Serial.println("42")
 Serial.println()
 ```
 
 `write` and `print` do not append a newline. `println` appends one after its
-value. Values passed to `print` and `println` are converted with
-`String(describing:)`.
+string value. Convert other values explicitly, for example
+`Serial.println("count = \(count)")`.
 
 ```swift
 var counter = 0
@@ -73,6 +73,33 @@ while true {
     sleep(1_000)
 }
 ```
+
+## Serial input
+
+`Serial` can also receive bytes from the host USB CDC connection. It is
+nonblocking, so a sketch can poll it without stalling its main loop:
+
+```swift
+while true {
+    if let byte = Serial.read() {
+        Serial.write([byte]) // Echo one exact byte.
+    }
+}
+```
+
+`Serial.read()` returns `UInt8?`: `nil` means no byte is currently available.
+`Serial.available` is useful when the loop has other work to do, and checking
+it does not consume the pending byte:
+
+```swift
+if Serial.available {
+    let commandByte = Serial.read()!
+    // Dispatch commandByte without a hidden blocking read.
+}
+```
+
+This is raw byte input; PicoKit does not add a line parser or command protocol.
+For a bounded, throwing read use `USBSerial.read(timeout:)`.
 
 ## Explicit runtime
 

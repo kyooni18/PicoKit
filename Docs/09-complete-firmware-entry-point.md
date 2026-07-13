@@ -1,6 +1,6 @@
 # PicoKit Documentation
 
-## Chapter 25: Complete firmware entry point
+## Complete firmware entry point
 
 
 Embedded Swift firmware starts from an `@main` type. This lower-level example

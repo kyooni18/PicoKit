@@ -105,6 +105,9 @@ pinMode(15, .output)
 Serial.println("starting")
 
 while true {
+    if let byte = Serial.read() {
+        Serial.write([byte])
+    }
     digitalWrite(15, .high)
     sleep(500)
     digitalWrite(15, .low)
@@ -112,7 +115,7 @@ while true {
 }
 ```
 
-See [the high-level API guide](Docs/33-high-level-api.md) for complete sketch,
+See [the high-level API guide](Docs/12-high-level-api.md) for complete sketch,
 serial, timing, testing, and low-level comparison examples.
 
 The same API is available on an explicit `Pico` runtime. This is useful when a
@@ -158,11 +161,22 @@ Swift from an IRQ handler.
 ## Host workflow
 
 ```sh
+swift build
 swift run PicoKitHostTests
+sh Tests/api-reference.sh
 ```
 
-The CLI integration and firmware matrix tests live in the separate
-[SwiftPico repository](https://github.com/kyooni18/swiftpico):
+The temporary-project integration creates a disposable SwiftPico serial-echo
+project against this checkout, builds its UF2, and verifies the picotool flash
+arguments without requiring attached hardware:
+
+```sh
+sh Tests/integration/generated-project.sh
+```
+
+Set `PICO_HARDWARE_TEST=1` to additionally flash one detected Pico and verify
+an exact binary USB CDC echo. If no single device is present, that optional
+section reports `SKIPPED`. SwiftPico also owns CLI and multi-board tests:
 
 ```sh
 cd ../SwiftPico
@@ -196,6 +210,6 @@ physical validation matrix; it is deliberately separate from build validation.
 
 PicoKit firmware projects can fetch C dependencies with CMake and compile
 Embedded Swift package targets through the extension points described in [the
-external-library guide](Docs/34-external-libraries.md). Keep the dependency
+external-library guide](Docs/13-external-libraries.md). Keep the dependency
 CMake file in the project so the precise targets and source directories linked
 into firmware remain reviewable.

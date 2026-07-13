@@ -10,6 +10,8 @@
 #include "hardware/spi.h"
 #include "hardware/uart.h"
 #include "hardware/watchdog.h"
+#include "pico/error.h"
+#include "pico/stdio.h"
 #include "pico/stdlib.h"
 #include "pico/status_led.h"
 
@@ -30,9 +32,36 @@ static void picokit_gpio_irq(uint gpio, uint32_t events) {
     if (gpio < 30) picokit_interrupt_events[gpio] |= events;
 }
 
+static bool picokit_expired(uint64_t deadline) { return time_us_64() >= deadline; }
+static uint64_t picokit_deadline_after(uint64_t timeout_us) {
+    uint64_t now = time_us_64();
+    return UINT64_MAX - now < timeout_us ? UINT64_MAX : now + timeout_us;
+}
 void picokit_stdio_init(void) { stdio_init_all(); }
 void picokit_stdio_write(const char *text) { stdio_puts(text); }
-static bool picokit_expired(uint64_t deadline) { return time_us_64() >= deadline; }
+void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count) {
+    if (bytes && count) stdio_put_string((const char *)bytes, (int)count, false, false);
+}
+int32_t picokit_stdio_read(uint8_t *byte, uint64_t timeout_us) {
+    if (!byte) return -1;
+
+    // The SDK accepts a UInt32 timeout while PicoKit's Duration is UInt64.
+    // Read in bounded slices so long Swift timeouts retain their full meaning.
+    uint64_t now = time_us_64();
+    uint64_t deadline = picokit_deadline_after(timeout_us);
+    do {
+        now = time_us_64();
+        uint64_t remaining = deadline > now ? deadline - now : 0;
+        uint32_t slice = remaining > UINT32_MAX ? UINT32_MAX : (uint32_t)remaining;
+        int result = stdio_getchar_timeout_us(slice);
+        if (result >= 0) {
+            *byte = (uint8_t)result;
+            return 0;
+        }
+        if (result != PICO_ERROR_TIMEOUT && result != PICO_ERROR_NO_DATA) return result;
+        if (timeout_us == 0 || picokit_expired(deadline)) return -2;
+    } while (true);
+}
 static uart_inst_t *picokit_uart(uint32_t instance) { return instance == 0 ? uart0 : instance == 1 ? uart1 : NULL; }
 int32_t picokit_uart_init(uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx) {
     uart_inst_t *uart = picokit_uart(instance);
@@ -45,7 +74,7 @@ int32_t picokit_uart_init(uint32_t instance, uint32_t baud_rate, uint32_t tx, ui
 int32_t picokit_uart_write(uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us) {
     uart_inst_t *uart = picokit_uart(instance);
     if (!uart || (!bytes && count)) return -1;
-    uint64_t deadline = time_us_64() + timeout_us;
+    uint64_t deadline = picokit_deadline_after(timeout_us);
     for (uint32_t index = 0; index < count; index++) {
         while (!uart_is_writable(uart)) if (picokit_expired(deadline)) return -2;
         uart_get_hw(uart)->dr = bytes[index];
@@ -55,7 +84,7 @@ int32_t picokit_uart_write(uint32_t instance, const uint8_t *bytes, uint32_t cou
 int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us) {
     uart_inst_t *uart = picokit_uart(instance);
     if (!uart || !byte) return -1;
-    uint64_t deadline = time_us_64() + timeout_us;
+    uint64_t deadline = picokit_deadline_after(timeout_us);
     while (!uart_is_readable(uart)) if (picokit_expired(deadline)) return -2;
     *byte = (uint8_t)uart_get_hw(uart)->dr;
     return 0;
@@ -141,7 +170,7 @@ int32_t picokit_spi_init(uint32_t instance, uint32_t frequency_hz, uint32_t sck,
 int32_t picokit_spi_transfer(uint32_t instance, const uint8_t *tx, uint8_t *rx, uint32_t count, uint64_t timeout_us) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi || (!tx && count) || (!rx && count)) return -1;
-    uint64_t deadline = time_us_64() + timeout_us;
+    uint64_t deadline = picokit_deadline_after(timeout_us);
     for (uint32_t index = 0; index < count; index++) {
         while (!spi_is_writable(spi)) if (picokit_expired(deadline)) return -2;
         spi_get_hw(spi)->dr = tx[index];

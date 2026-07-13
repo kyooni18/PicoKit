@@ -1,6 +1,6 @@
 # PicoKit Documentation
 
-## Chapter 12: Core value types
+## Core types and errors
 
 
 ### `PicoChip`
@@ -106,3 +106,20 @@ Additional properties:
 state.toggled
 state.isHigh
 ```
+
+### Errors
+
+Low-level APIs report `PicoKitError`:
+
+| Error | Meaning |
+|---|---|
+| `invalidPin` | GPIO is outside `0...29` |
+| `invalidFrequency` | Frequency is zero or overflowed |
+| `invalidTimeout` | Duration is zero, overflowed, or unsupported |
+| `invalidAddress` | I2C address is outside `0x08...0x77` |
+| `unavailable` | Hardware bridge or board feature is unavailable |
+| `timedOut` | A bounded operation made no progress before its deadline |
+| `ioFailure` | Pico SDK returned another failure |
+| `ownershipConflict` | A helper received the wrong peripheral-owned pin |
+
+`PicoKitError.description` is suitable for logs during board bring-up.

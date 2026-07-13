@@ -1,6 +1,6 @@
 # PicoKit Documentation
 
-## Chapter 23: GPIO interrupts
+## GPIO interrupts and watchdog
 
 
 Interrupts are intentionally kept simple: enable the edge you care about, then
@@ -37,3 +37,21 @@ runtime, and reentrancy hazards in interrupt context.
 Because event bits are coalesced, repeated identical edges can collapse into one
 pending bit before `takeEvents` runs. Treat this as event notification, not an
 exact edge counter.
+
+### Watchdog
+
+Create and enable the watchdog once the main loop is ready to prove it is
+healthy:
+
+```swift
+let watchdog = PicoWatchdog()
+try watchdog.enable(timeout: .seconds(2), pauseOnDebug: true)
+
+while true {
+    // Work that must stay alive.
+    watchdog.update()
+}
+```
+
+The timeout must fit a `UInt32` count of milliseconds. Give it enough headroom
+for a slow but healthy loop.
