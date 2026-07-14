@@ -14,6 +14,11 @@ endif()
 if(NOT DEFINED PICOKIT_SOURCE)
     set(PICOKIT_SOURCE "${PICOKIT_ROOT}/Sources/Blink/main.swift")
 endif()
+set(PICOKIT_USB_STDOUT_TIMEOUT_US "10000" CACHE STRING
+    "Maximum time USB CDC output may block when the host stops consuming data")
+if(NOT PICOKIT_USB_STDOUT_TIMEOUT_US MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "PICOKIT_USB_STDOUT_TIMEOUT_US must be a non-negative integer")
+endif()
 # PICOKIT_SOURCE remains the backwards-compatible entry-point hint used by
 # SwiftPico. Compile every Swift file in that application's directory so a
 # sketch can be split into ordinary source files and subdirectories. Callers
@@ -63,7 +68,21 @@ endif()
 set(PICOKIT_BRIDGE_DIR "${PICOKIT_ROOT}/Firmware")
 add_library(PicoKitSDKBridge STATIC "${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c")
 target_include_directories(PicoKitSDKBridge PUBLIC "${PICOKIT_BRIDGE_DIR}")
-target_link_libraries(PicoKitSDKBridge PUBLIC pico_stdlib pico_status_led hardware_adc hardware_dma hardware_i2c hardware_pwm hardware_spi hardware_watchdog)
+set(PICOKIT_SDK_LIBRARIES
+    pico_stdlib pico_status_led hardware_adc hardware_dma hardware_i2c
+    hardware_pwm hardware_spi hardware_watchdog
+)
+# Keep the SDK implementation closure private to the C bridge. PUBLIC linkage
+# causes CMake to attach the same INTERFACE sources and definitions to every
+# Swift consumer, compiling large portions of the SDK two or three times.
+target_link_libraries(PicoKitSDKBridge PRIVATE ${PICOKIT_SDK_LIBRARIES})
+target_compile_definitions(PicoKitSDKBridge PRIVATE
+    PICO_STDIO_USB_STDOUT_TIMEOUT_US=${PICOKIT_USB_STDOUT_TIMEOUT_US}
+    PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
+    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
+)
+pico_enable_stdio_usb(PicoKitSDKBridge 1)
+pico_enable_stdio_uart(PicoKitSDKBridge 0)
 
 # Layers 2, 1, and public facade. This is a real Swift library; firmware
 # sources import PicoKit and link it instead of calling a project-local shim.
@@ -106,7 +125,9 @@ function(picokit_collect_definitions target)
     endif()
 endfunction()
 
-picokit_collect_definitions(PicoKit)
+foreach(library ${PICOKIT_SDK_LIBRARIES})
+    picokit_collect_definitions(${library})
+endforeach()
 get_property(COMPILE_DEFINITIONS GLOBAL PROPERTY picokit_compile_definitions)
 list(REMOVE_DUPLICATES COMPILE_DEFINITIONS)
 list(PREPEND COMPILE_DEFINITIONS "")

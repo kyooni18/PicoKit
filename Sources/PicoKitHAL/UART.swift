@@ -50,6 +50,14 @@ public final class PicoUART {
         #endif
     }
 
+    /// Releases the DMA channel retained by `writeDMA(_:)`. PicoKit reuses the
+    /// channel between writes to avoid repeated resource-claim overhead.
+    public func releaseDMAChannel() {
+        #if PICOKIT_PICO_SDK
+        picokit_uart_dma_release(instance.rawValue)
+        #endif
+    }
+
     public func read(timeout: Duration) throws(PicoKitError) -> UInt8 {
         #if PICOKIT_PICO_SDK
         var byte: UInt8 = 0

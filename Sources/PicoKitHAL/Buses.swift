@@ -229,6 +229,14 @@ public final class PicoSPI {
         #endif
     }
 
+    /// Releases the two DMA channels retained by `writeDMA(_:)`. PicoKit
+    /// reuses them between writes to avoid repeated claim and cleanup work.
+    public func releaseDMAChannels() {
+        #if PICOKIT_PICO_SDK
+        picokit_spi_dma_release(instance.rawValue)
+        #endif
+    }
+
     public func transfer(_ bytes: [UInt8], timeout: Duration) throws(PicoKitError) -> [UInt8] {
         guard dataBits == .eight else { throw PicoKitError.unavailable("8-bit SPI transfer while configured for 16-bit transfers") }
         #if PICOKIT_PICO_SDK

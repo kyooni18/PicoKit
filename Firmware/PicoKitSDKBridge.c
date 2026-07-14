@@ -32,6 +32,10 @@ static bool picokit_adc_initialized;
 static bool picokit_adc_gpio_initialized[4];
 static uint32_t picokit_adc_channel = UINT32_MAX;
 static bool picokit_adc_temperature_enabled;
+static uint32_t picokit_stdio_initialization_state;
+static int picokit_uart_dma_channels[2] = {-1, -1};
+static int picokit_spi_dma_tx_channels[2] = {-1, -1};
+static int picokit_spi_dma_rx_channels[2] = {-1, -1};
 
 // PicoKit deliberately exposes GPIO0...GPIO29, including on RP2350 boards
 // with additional GPIO. Keep the fast mask API inside that public range.
@@ -46,11 +50,34 @@ static uint64_t picokit_deadline_after(uint64_t timeout_us) {
     uint64_t now = time_us_64();
     return UINT64_MAX - now < timeout_us ? UINT64_MAX : now + timeout_us;
 }
-void picokit_stdio_init(void) { stdio_init_all(); }
-void picokit_stdio_write(const char *text) { stdio_puts(text); }
+void picokit_stdio_init(void) {
+    // stdio_usb_init claims an IRQ and installs handlers, so it must run only
+    // once even when an application constructs several USBSerial values. The
+    // atomic state also prevents two cores from racing through initialization.
+    for (;;) {
+        uint32_t state = __atomic_load_n(&picokit_stdio_initialization_state, __ATOMIC_ACQUIRE);
+        if (state == 2) return;
+        if (state == 0) {
+            uint32_t expected = 0;
+            if (__atomic_compare_exchange_n(
+                    &picokit_stdio_initialization_state, &expected, 1, false,
+                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                bool initialized = stdio_init_all();
+                __atomic_store_n(
+                    &picokit_stdio_initialization_state, initialized ? 2u : 0u,
+                    __ATOMIC_RELEASE
+                );
+                return;
+            }
+        }
+        tight_loop_contents();
+    }
+}
+void picokit_stdio_write(const char *text) {
+    if (text) stdio_put_string(text, -1, false, true);
+}
 void picokit_stdio_write_line(const char *text) {
-    stdio_puts(text);
-    stdio_puts("\n");
+    if (text) stdio_put_string(text, -1, true, true);
 }
 void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count) {
     if (bytes && count) stdio_put_string((const char *)bytes, (int)count, false, false);
@@ -95,6 +122,7 @@ int32_t picokit_uart_write(uint32_t instance, const uint8_t *bytes, uint32_t cou
     return (int32_t)count;
 }
 static int32_t picokit_dma_write(
+    int *channel_slot,
     volatile void *destination,
     const void *source,
     uint32_t count,
@@ -104,8 +132,12 @@ static int32_t picokit_dma_write(
     if (!source && count) return -1;
     if (count == 0) return 0;
 
-    int channel = dma_claim_unused_channel(false);
-    if (channel < 0) return -3;
+    int channel = *channel_slot;
+    if (channel < 0) {
+        channel = dma_claim_unused_channel(false);
+        if (channel < 0) return -3;
+        *channel_slot = channel;
+    }
 
     dma_channel_config config = dma_channel_get_default_config((uint)channel);
     channel_config_set_transfer_data_size(&config, size);
@@ -114,14 +146,23 @@ static int32_t picokit_dma_write(
     channel_config_set_dreq(&config, dreq);
     dma_channel_configure((uint)channel, &config, destination, source, count, true);
     dma_channel_wait_for_finish_blocking((uint)channel);
-    dma_channel_cleanup((uint)channel);
-    dma_channel_unclaim((uint)channel);
     return (int32_t)count;
 }
 int32_t picokit_uart_write_dma(uint32_t instance, const uint8_t *bytes, uint32_t count) {
     uart_inst_t *uart = picokit_uart(instance);
     if (!uart) return -1;
-    return picokit_dma_write(&uart_get_hw(uart)->dr, bytes, count, DMA_SIZE_8, uart_get_dreq(uart, true));
+    return picokit_dma_write(
+        &picokit_uart_dma_channels[instance], &uart_get_hw(uart)->dr,
+        bytes, count, DMA_SIZE_8, uart_get_dreq(uart, true)
+    );
+}
+void picokit_uart_dma_release(uint32_t instance) {
+    if (instance > 1) return;
+    int channel = picokit_uart_dma_channels[instance];
+    if (channel < 0) return;
+    dma_channel_cleanup((uint)channel);
+    dma_channel_unclaim((uint)channel);
+    picokit_uart_dma_channels[instance] = -1;
 }
 int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us) {
     uart_inst_t *uart = picokit_uart(instance);
@@ -290,6 +331,7 @@ int32_t picokit_spi_write16(uint32_t instance, const uint16_t *words, uint32_t c
     return spi_write16_blocking(spi, words, count);
 }
 static int32_t picokit_spi_dma_write(
+    uint32_t instance,
     spi_inst_t *spi,
     const void *bytes,
     uint32_t count,
@@ -298,13 +340,24 @@ static int32_t picokit_spi_dma_write(
     if (!bytes && count) return -1;
     if (count == 0) return 0;
 
-    int tx_channel = dma_claim_unused_channel(false);
-    if (tx_channel < 0) return -3;
-    int rx_channel = dma_claim_unused_channel(false);
+    int tx_channel = picokit_spi_dma_tx_channels[instance];
+    bool claimed_tx = false;
+    if (tx_channel < 0) {
+        tx_channel = dma_claim_unused_channel(false);
+        if (tx_channel < 0) return -3;
+        picokit_spi_dma_tx_channels[instance] = tx_channel;
+        claimed_tx = true;
+    }
+    int rx_channel = picokit_spi_dma_rx_channels[instance];
+    if (rx_channel < 0) rx_channel = dma_claim_unused_channel(false);
     if (rx_channel < 0) {
-        dma_channel_unclaim((uint)tx_channel);
+        if (claimed_tx) {
+            dma_channel_unclaim((uint)tx_channel);
+            picokit_spi_dma_tx_channels[instance] = -1;
+        }
         return -3;
     }
+    picokit_spi_dma_rx_channels[instance] = rx_channel;
 
     // SPI is full duplex even for write-only Swift APIs. Drain every received
     // word through a paired DMA channel so the RX FIFO never stalls TX.
@@ -329,21 +382,32 @@ static int32_t picokit_spi_dma_write(
 
     dma_channel_wait_for_finish_blocking((uint)tx_channel);
     dma_channel_wait_for_finish_blocking((uint)rx_channel);
-    dma_channel_cleanup((uint)tx_channel);
-    dma_channel_cleanup((uint)rx_channel);
-    dma_channel_unclaim((uint)tx_channel);
-    dma_channel_unclaim((uint)rx_channel);
     return (int32_t)count;
 }
 int32_t picokit_spi_write_dma(uint32_t instance, const uint8_t *bytes, uint32_t count) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
-    return picokit_spi_dma_write(spi, bytes, count, DMA_SIZE_8);
+    return picokit_spi_dma_write(instance, spi, bytes, count, DMA_SIZE_8);
 }
 int32_t picokit_spi_write16_dma(uint32_t instance, const uint16_t *words, uint32_t count) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
-    return picokit_spi_dma_write(spi, words, count, DMA_SIZE_16);
+    return picokit_spi_dma_write(instance, spi, words, count, DMA_SIZE_16);
+}
+void picokit_spi_dma_release(uint32_t instance) {
+    if (instance > 1) return;
+    int tx_channel = picokit_spi_dma_tx_channels[instance];
+    int rx_channel = picokit_spi_dma_rx_channels[instance];
+    if (tx_channel >= 0) {
+        dma_channel_cleanup((uint)tx_channel);
+        dma_channel_unclaim((uint)tx_channel);
+        picokit_spi_dma_tx_channels[instance] = -1;
+    }
+    if (rx_channel >= 0) {
+        dma_channel_cleanup((uint)rx_channel);
+        dma_channel_unclaim((uint)rx_channel);
+        picokit_spi_dma_rx_channels[instance] = -1;
+    }
 }
 int32_t picokit_spi_transfer(uint32_t instance, const uint8_t *tx, uint8_t *rx, uint32_t count, uint64_t timeout_us) {
     spi_inst_t *spi = picokit_spi(instance);

@@ -9,7 +9,9 @@ fast paths only after measuring a peripheral-bound workload:
   peripheral once, then reuse it.
 - `PicoSPI.writeDMA(_:)` and `PicoUART.writeDMA(_:)` synchronously send a
   prepared buffer through DMA. They are best for sufficiently large output
-  buffers, not single-byte commands.
+  buffers, not single-byte commands. Each peripheral retains its claimed DMA
+  channel(s) between calls. Call `releaseDMAChannels()` on SPI or
+  `releaseDMAChannel()` on UART when another subsystem needs those resources.
 - Use hardware PWM, PIO, or focused C for cycle-critical waveforms, bit-banged
   protocols, and continuous capture. PicoKit deliberately has no PIO or
   asynchronous DMA API yet.
@@ -33,10 +35,13 @@ cmake --build Firmware/build-performance --parallel
 ```
 
 Flash `Firmware/build-performance/Performance.uf2` with SwiftPico or
-`picotool`, then monitor USB CDC. Capture at least five complete runs and compare medians. CPU-loop medians must
-remain within 3% of the saved baseline. GPIO tests measure software-side call
-cost; confirm real edge timing separately with a logic analyzer when that is
-the requirement.
+`picotool`, then monitor USB CDC. GPIO tests measure software-side call cost;
+confirm real edge timing separately with a logic analyzer when that is the
+requirement.
+
+USB output is bounded by `PICOKIT_USB_STDOUT_TIMEOUT_US`, which defaults to
+10,000 microseconds. Override that CMake cache value when lossless diagnostic
+logging is more important than keeping a control loop responsive.
 
 The fixture intentionally does not drive SPI or UART DMA automatically because
 their meaningful throughput test needs the application's selected baud/clock,

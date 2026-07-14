@@ -8,7 +8,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 project="$tmp/SerialEcho"
-swift run --package-path "$swiftpico" swiftpico init \
+swift run --build-system native --package-path "$swiftpico" swiftpico init \
     --board pico --name SerialEcho --template serial --path "$project" \
     --pico-kit-path "$root"
 
@@ -19,13 +19,13 @@ grep -Fq '.package(path: "'"$root"'")' "$project/Package.swift"
 grep -Fq '"picoKitPath"' "$project/swiftpico.json"
 grep -Fq 'PicoKit' "$project/swiftpico.json"
 
-swift run --package-path "$swiftpico" swiftpico build \
+swift run --build-system native --package-path "$swiftpico" swiftpico build \
     --configuration release --context "$project/swiftpico.json"
 uf2="$project/Firmware/build/SerialEcho.uf2"
 test -s "$uf2"
 
 export SWIFTPICO_TEST_LOG="$tmp/picotool-args"
-swift run --package-path "$swiftpico" swiftpico flash \
+swift run --build-system native --package-path "$swiftpico" swiftpico flash \
     --context "$project/swiftpico.json" --picotool "$swiftpico/Tests/fake-picotool.sh"
 test "$(sed -n '1p' "$SWIFTPICO_TEST_LOG")" = load
 test "$(sed -n '2p' "$SWIFTPICO_TEST_LOG")" = -f
@@ -49,7 +49,7 @@ if test "$#" -ne 1; then
     exit 0
 fi
 
-swift run --package-path "$swiftpico" swiftpico flash --context "$project/swiftpico.json"
+swift run --build-system native --package-path "$swiftpico" swiftpico flash --context "$project/swiftpico.json"
 i=0
 while test "$i" -lt 40; do
     set -- /dev/cu.usbmodem* /dev/ttyACM* /dev/ttyUSB*

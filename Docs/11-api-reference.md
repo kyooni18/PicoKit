@@ -152,6 +152,7 @@ final class PicoUART {
     let instance: UARTInstance
     func write(_ bytes: [UInt8], timeout: Duration) throws -> Int
     func writeDMA(_ bytes: [UInt8]) throws
+    func releaseDMAChannel()
     func read(timeout: Duration) throws -> UInt8
 }
 
@@ -227,6 +228,7 @@ final class PicoSPI {
     func write(_ words: [UInt16]) throws
     func writeDMA(_ bytes: [UInt8]) throws
     func writeDMA(_ words: [UInt16]) throws
+    func releaseDMAChannels()
     func transfer(_ bytes: [UInt8], timeout: Duration) throws -> [UInt8]
 }
 ```

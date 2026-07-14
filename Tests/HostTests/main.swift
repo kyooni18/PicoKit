@@ -178,6 +178,8 @@ struct PicoKitHostTests {
             let _: (PicoSPI, [UInt8]) throws -> Void = { try $0.writeDMA($1) }
             let _: (PicoSPI, [UInt16]) throws -> Void = { try $0.writeDMA($1) }
             let _: (PicoUART, [UInt8]) throws -> Void = { try $0.writeDMA($1) }
+            let _: (PicoSPI) -> Void = { $0.releaseDMAChannels() }
+            let _: (PicoUART) -> Void = { $0.releaseDMAChannel() }
             let _: (PicoPWM, UInt16) throws -> Void = { try $0.setCounterLevel($1) }
             let _: PinPull = .up
             let _: PinDriveStrength = .milliamps12

@@ -11,7 +11,7 @@ for symbol in \
     SPIMode SPIBitOrder SPIDataBits PicoSPI PinPull PinDriveStrength PinSlewRate \
     GPIOInterruptEdge PicoInterrupts PicoWatchdog pinMode digitalWrite digitalToggle \
     digitalRead analogRead analogWrite delay delayMicroseconds millis micros sleep \
-    sleepMicroseconds
+    sleepMicroseconds releaseDMAChannel releaseDMAChannels
 do
     grep -q "$symbol" "$reference" || {
         echo "Docs/11-api-reference.md is missing $symbol" >&2
