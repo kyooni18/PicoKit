@@ -1,0 +1,28 @@
+name: PicoKit CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  host-validation:
+    name: Host validation (${{ matrix.architecture }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            runner: macos-15
+          - architecture: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: swift-actions/setup-swift@v3
+      - name: Verify architecture
+        run: test "$(uname -m)" = "${{ matrix.architecture }}"
+      - name: Build
+        run: swift build
+      - name: Run host validation
+        run: swift run PicoKitHostTests

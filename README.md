@@ -5,6 +5,10 @@ live in register definitions or Pico SDK macros. It supports the RP2040 Pico
 family and the RP2350 Pico 2 family, while keeping the official Pico SDK on the
 other side of a small C bridge.
 
+Host-side package builds support macOS 13 or newer on both Apple Silicon
+(`arm64`) and Intel (`x86_64`). Firmware output still targets the selected
+Raspberry Pi Pico board.
+
 ## Architecture
 
 - `Sources/PicoKitCore`: Foundation-free validation, units, errors, boards,
