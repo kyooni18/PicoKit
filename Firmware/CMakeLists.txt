@@ -19,6 +19,8 @@ set(PICOKIT_USB_STDOUT_TIMEOUT_US "10000" CACHE STRING
 if(NOT PICOKIT_USB_STDOUT_TIMEOUT_US MATCHES "^[0-9]+$")
     message(FATAL_ERROR "PICOKIT_USB_STDOUT_TIMEOUT_US must be a non-negative integer")
 endif()
+option(PICOKIT_ENABLE_USB
+    "Initialize and link the USB CDC/reset interface for the firmware target" ON)
 # PICOKIT_SOURCE remains the backwards-compatible entry-point hint used by
 # SwiftPico. Compile every Swift file in that application's directory so a
 # sketch can be split into ordinary source files and subdirectories. Callers
@@ -76,12 +78,18 @@ set(PICOKIT_SDK_LIBRARIES
 # causes CMake to attach the same INTERFACE sources and definitions to every
 # Swift consumer, compiling large portions of the SDK two or three times.
 target_link_libraries(PicoKitSDKBridge PRIVATE ${PICOKIT_SDK_LIBRARIES})
-target_compile_definitions(PicoKitSDKBridge PRIVATE
-    PICO_STDIO_USB_STDOUT_TIMEOUT_US=${PICOKIT_USB_STDOUT_TIMEOUT_US}
-    PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
-    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
-)
-pico_enable_stdio_usb(PicoKitSDKBridge 1)
+if(PICOKIT_ENABLE_USB)
+    target_compile_definitions(PicoKitSDKBridge PRIVATE
+        PICOKIT_ENABLE_USB=1
+        PICO_STDIO_USB_STDOUT_TIMEOUT_US=${PICOKIT_USB_STDOUT_TIMEOUT_US}
+        PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
+        PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
+    )
+    pico_enable_stdio_usb(PicoKitSDKBridge 1)
+else()
+    target_compile_definitions(PicoKitSDKBridge PRIVATE PICOKIT_ENABLE_USB=0)
+    pico_enable_stdio_usb(PicoKitSDKBridge 0)
+endif()
 pico_enable_stdio_uart(PicoKitSDKBridge 0)
 
 # Layers 2, 1, and public facade. This is a real Swift library; firmware
@@ -154,10 +162,12 @@ target_compile_options(PicoKit PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
 
 add_executable(${PICOKIT_PRODUCT} ${PICOKIT_SOURCES})
 set_target_properties(${PICOKIT_PRODUCT} PROPERTIES LINKER_LANGUAGE CXX)
-target_compile_definitions(${PICOKIT_PRODUCT} PRIVATE
-    PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
-    PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
-)
+if(PICOKIT_ENABLE_USB)
+    target_compile_definitions(${PICOKIT_PRODUCT} PRIVATE
+        PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
+        PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
+    )
+endif()
 target_compile_options(${PICOKIT_PRODUCT} PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
     -target ${SWIFT_TARGET}
     -enable-experimental-feature Embedded
@@ -182,7 +192,11 @@ if(EXISTS "${PICOKIT_APP_INTEROP_DIR}")
     endif()
     target_include_directories(${PICOKIT_PRODUCT} PRIVATE "${PICOKIT_APP_INTEROP_DIR}")
 endif()
-pico_enable_stdio_usb(${PICOKIT_PRODUCT} 1)
+if(PICOKIT_ENABLE_USB)
+    pico_enable_stdio_usb(${PICOKIT_PRODUCT} 1)
+else()
+    pico_enable_stdio_usb(${PICOKIT_PRODUCT} 0)
+endif()
 pico_enable_stdio_uart(${PICOKIT_PRODUCT} 0)
 pico_add_extra_outputs(${PICOKIT_PRODUCT})
 

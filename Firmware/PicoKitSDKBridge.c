@@ -12,6 +12,7 @@
 #include "hardware/uart.h"
 #include "hardware/watchdog.h"
 #include "pico/error.h"
+#include "pico/runtime.h"
 #include "pico/stdio.h"
 #include "pico/stdlib.h"
 #include "pico/status_led.h"
@@ -73,6 +74,18 @@ void picokit_stdio_init(void) {
         tight_loop_contents();
     }
 }
+
+// USB stdio must be initialized before the Swift application enters main.
+// `pico_enable_stdio_usb` only links the backend; without this hook sketches
+// that do not otherwise use Serial never enumerate after `picotool load -f`
+// reboots them into the newly flashed application.
+#if PICOKIT_ENABLE_USB
+static void picokit_runtime_init_stdio(void) {
+    picokit_stdio_init();
+}
+PICO_RUNTIME_INIT_FUNC_RUNTIME(picokit_runtime_init_stdio, "11090");
+#endif
+
 void picokit_stdio_write(const char *text) {
     if (text) stdio_put_string(text, -1, false, true);
 }
