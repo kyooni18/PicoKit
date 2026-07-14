@@ -34,8 +34,10 @@ public enum PicoKitError: Error, Equatable, Sendable, CustomStringConvertible {
     case invalidFrequency(UInt32)
     case invalidTimeout(UInt64)
     case invalidAddress(UInt8)
+    case invalidPeripheralPin(peripheral: String, pin: PicoPin)
     case unavailable(String)
     case timedOut(operation: String)
+    case partialTransfer(operation: String, transferred: Int, expected: Int)
     case ioFailure(operation: String, status: Int32)
     case ownershipConflict(String)
 
@@ -45,8 +47,11 @@ public enum PicoKitError: Error, Equatable, Sendable, CustomStringConvertible {
         case .invalidFrequency(let hertz): "frequency \(hertz) Hz must be greater than zero"
         case .invalidTimeout(let microseconds): "timeout \(microseconds) us must be greater than zero"
         case .invalidAddress(let address): "I2C address 0x\(String(address, radix: 16)) is outside 0x08...0x77"
+        case .invalidPeripheralPin(let peripheral, let pin): "\(pin) cannot be used as \(peripheral)"
         case .unavailable(let feature): "\(feature) is unavailable for this board or build"
         case .timedOut(let operation): "\(operation) timed out"
+        case .partialTransfer(let operation, let transferred, let expected):
+            "\(operation) transferred \(transferred) of \(expected) elements"
         case .ioFailure(let operation, let status): "\(operation) failed with SDK status \(status)"
         case .ownershipConflict(let peripheral): "\(peripheral) is already owned by another PicoKit instance"
         }
@@ -62,6 +67,39 @@ public struct PicoPin: RawRepresentable, Hashable, Sendable, Comparable, CustomS
     public init?(rawValue: UInt32) { guard rawValue < 30 else { return nil }; self.rawValue = rawValue }
     public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
     public var description: String { "GPIO\(rawValue)" }
+}
+
+public extension PicoPin {
+    static let gpio0 = try! PicoPin(0)
+    static let gpio1 = try! PicoPin(1)
+    static let gpio2 = try! PicoPin(2)
+    static let gpio3 = try! PicoPin(3)
+    static let gpio4 = try! PicoPin(4)
+    static let gpio5 = try! PicoPin(5)
+    static let gpio6 = try! PicoPin(6)
+    static let gpio7 = try! PicoPin(7)
+    static let gpio8 = try! PicoPin(8)
+    static let gpio9 = try! PicoPin(9)
+    static let gpio10 = try! PicoPin(10)
+    static let gpio11 = try! PicoPin(11)
+    static let gpio12 = try! PicoPin(12)
+    static let gpio13 = try! PicoPin(13)
+    static let gpio14 = try! PicoPin(14)
+    static let gpio15 = try! PicoPin(15)
+    static let gpio16 = try! PicoPin(16)
+    static let gpio17 = try! PicoPin(17)
+    static let gpio18 = try! PicoPin(18)
+    static let gpio19 = try! PicoPin(19)
+    static let gpio20 = try! PicoPin(20)
+    static let gpio21 = try! PicoPin(21)
+    static let gpio22 = try! PicoPin(22)
+    static let gpio23 = try! PicoPin(23)
+    static let gpio24 = try! PicoPin(24)
+    static let gpio25 = try! PicoPin(25)
+    static let gpio26 = try! PicoPin(26)
+    static let gpio27 = try! PicoPin(27)
+    static let gpio28 = try! PicoPin(28)
+    static let gpio29 = try! PicoPin(29)
 }
 
 public struct Duration: Hashable, Sendable, Comparable {
@@ -99,6 +137,11 @@ public struct Frequency: Hashable, Sendable, Comparable {
 }
 
 public enum PinMode: CaseIterable, Sendable { case input, output }
+public enum PinPull: UInt32, CaseIterable, Sendable { case none, up, down }
+public enum PinDriveStrength: UInt32, CaseIterable, Sendable {
+    case milliamps2, milliamps4, milliamps8, milliamps12
+}
+public enum PinSlewRate: UInt32, CaseIterable, Sendable { case slow, fast }
 public enum PinState: CaseIterable, Sendable {
     case low, high
     public var toggled: Self { self == .low ? .high : .low }

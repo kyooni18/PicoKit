@@ -98,6 +98,19 @@ void picokit_gpio_set_direction(uint32_t pin, uint32_t output) { gpio_set_dir(pi
 void picokit_gpio_write(uint32_t pin, uint32_t value) { gpio_put(pin, value != 0); }
 uint32_t picokit_gpio_read(uint32_t pin) { return gpio_get(pin) ? 1u : 0u; }
 void picokit_gpio_toggle(uint32_t pin) { gpio_xor_mask(1u << pin); }
+int32_t picokit_gpio_configure(uint32_t pin, uint32_t output, uint32_t initial_value,
+                               uint32_t pull, uint32_t drive, uint32_t slew) {
+    if (pin >= NUM_BANK0_GPIOS || pull > 2 || drive > 3 || slew > 1) return -1;
+    gpio_init(pin);
+    // Program the output latch before enabling output to prevent a transient
+    // opposite level on reset, chip-select, and backlight pins.
+    gpio_put(pin, initial_value != 0);
+    gpio_set_pulls(pin, pull == 1, pull == 2);
+    gpio_set_drive_strength(pin, (enum gpio_drive_strength)drive);
+    gpio_set_slew_rate(pin, (enum gpio_slew_rate)slew);
+    gpio_set_dir(pin, output != 0);
+    return 0;
+}
 
 uint64_t picokit_time_us(void) { return time_us_64(); }
 void picokit_sleep_us(uint64_t microseconds) { sleep_us(microseconds); }
@@ -166,6 +179,50 @@ int32_t picokit_spi_init(uint32_t instance, uint32_t frequency_hz, uint32_t sck,
     gpio_set_function(mosi, GPIO_FUNC_SPI);
     gpio_set_function(miso, GPIO_FUNC_SPI);
     return 0;
+}
+int32_t picokit_spi_init_config(uint32_t instance, uint32_t frequency_hz, uint32_t sck,
+                                uint32_t mosi, int32_t miso, uint32_t mode,
+                                uint32_t bit_order, uint32_t data_bits,
+                                uint32_t *actual_frequency_hz) {
+    spi_inst_t *spi = picokit_spi(instance);
+    if (!spi || !frequency_hz || mode > 3 || bit_order > 1 || (data_bits != 8 && data_bits != 16)) return -1;
+    uint32_t actual = spi_init(spi, frequency_hz);
+    spi_cpol_t cpol = mode >= 2 ? SPI_CPOL_1 : SPI_CPOL_0;
+    spi_cpha_t cpha = (mode & 1u) ? SPI_CPHA_1 : SPI_CPHA_0;
+    spi_set_format(spi, data_bits, cpol, cpha, bit_order == 0 ? SPI_MSB_FIRST : SPI_LSB_FIRST);
+    gpio_set_function(sck, GPIO_FUNC_SPI);
+    gpio_set_function(mosi, GPIO_FUNC_SPI);
+    if (miso >= 0) gpio_set_function((uint32_t)miso, GPIO_FUNC_SPI);
+    if (actual_frequency_hz) *actual_frequency_hz = actual;
+    return 0;
+}
+int32_t picokit_spi_write(uint32_t instance, const uint8_t *bytes, uint32_t count) {
+    spi_inst_t *spi = picokit_spi(instance);
+    if (!spi || (!bytes && count)) return -1;
+    return spi_write_blocking(spi, bytes, count);
+}
+int32_t picokit_spi_write_timeout(uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us) {
+    spi_inst_t *spi = picokit_spi(instance);
+    if (!spi || (!bytes && count)) return -1;
+    uint64_t deadline = picokit_deadline_after(timeout_us);
+    uint32_t transferred = 0;
+    while (transferred < count) {
+        while (!spi_is_writable(spi)) {
+            if (picokit_expired(deadline)) return (int32_t)transferred;
+        }
+        spi_get_hw(spi)->dr = bytes[transferred++];
+        // Drain RX to avoid stalling a full-duplex peripheral during TX-only use.
+        while (!spi_is_readable(spi)) {
+            if (picokit_expired(deadline)) return (int32_t)(transferred - 1);
+        }
+        (void)spi_get_hw(spi)->dr;
+    }
+    return (int32_t)transferred;
+}
+int32_t picokit_spi_write16(uint32_t instance, const uint16_t *words, uint32_t count) {
+    spi_inst_t *spi = picokit_spi(instance);
+    if (!spi || (!words && count)) return -1;
+    return spi_write16_blocking(spi, words, count);
 }
 int32_t picokit_spi_transfer(uint32_t instance, const uint8_t *tx, uint8_t *rx, uint32_t count, uint64_t timeout_us) {
     spi_inst_t *spi = picokit_spi(instance);

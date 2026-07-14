@@ -31,6 +31,29 @@ public final class PicoPWM {
     public func analogWrite(_ duty: UInt16) throws(PicoKitError) { try setDutyCycle(duty) }
 }
 
+/// PWM-backed display backlight with explicit active-high/active-low polarity.
+public final class PicoBacklight {
+    private let pwm: PicoPWM
+    private let activeHigh: Bool
+
+    public init(pin: PicoPin, frequency: Frequency = try! .kilohertz(20), activeHigh: Bool = true) throws(PicoKitError) {
+        self.pwm = try PicoPWM(pin: pin, frequency: frequency)
+        self.activeHigh = activeHigh
+        try setBrightness(0 as UInt16)
+    }
+
+    public func setBrightness(_ value: UInt16) throws(PicoKitError) {
+        try pwm.setDutyCycle(activeHigh ? value : UInt16.max - value)
+    }
+
+    public func setBrightness(_ value: UInt8) throws(PicoKitError) {
+        try setBrightness(UInt16(value) * 257)
+    }
+
+    public func off() throws(PicoKitError) { try setBrightness(0 as UInt16) }
+    public func fullOn() throws(PicoKitError) { try setBrightness(UInt16.max) }
+}
+
 @inlinable
 public func analogWrite(_ pin: Int, _ duty: UInt8, using pwm: PicoPWM) throws(PicoKitError) {
     let validated = try PicoPin(pin)
@@ -91,4 +114,3 @@ public func analogRead(_ pin: Int, using adc: PicoADC) throws(PicoKitError) -> U
     }
     return try adc.read(channel)
 }
-

@@ -1,73 +1,69 @@
-# PicoKit Documentation
+# External libraries
 
-## External libraries
+PicoKit keeps its own `PicoKitSDKBridge` private to the hardware abstraction
+layer. Firmware applications import third-party C and C++ libraries through
+project-owned adapters under `Firmware/Interop`; third-party headers never need
+to be added to PicoKit's bridging header.
 
-Add a library to the normal SwiftPM development build, then describe its
-firmware integration in a project-local `Firmware/Dependencies.cmake` file.
-PicoKit includes that file automatically after defining the firmware target and
-the `picokit_add_swift_library` helper. Set
-`PICOKIT_DEPENDENCIES_FILE` before including PicoKit's firmware CMake entrypoint
-only if you keep the file somewhere else.
+New SwiftPico projects use:
 
-### C and C++ libraries
-
-Fetch a repository and link the CMake target that it exports:
-
-```sh
-include(FetchContent)
-FetchContent_Declare(tiny_driver
-    GIT_REPOSITORY "https://github.com/example/tiny-driver.git"
-    GIT_TAG "v1.2.0")
-FetchContent_MakeAvailable(tiny_driver)
-target_link_libraries(${PICOKIT_PRODUCT} PRIVATE tiny_driver)
+```text
+Firmware/
+  dependencies.json
+  dependencies.lock
+  Generated/Dependencies.cmake
+  Dependencies.local.cmake
+  Interop/
+    AppInterop.h
+    AppInterop.c
+    Callbacks.h
+    Modules/<Library>/module.modulemap
 ```
 
-On the next firmware build, CMake fetches the source for the embedded target
-and links `tiny_driver` into the firmware. The library must support the Pico
-cross compiler; a host-only CMake package cannot be used as firmware.
+`dependencies.json` is editable user intent. `dependencies.lock` records exact
+Git commits and toolchain compatibility. Generated CMake is read-only. Run
+`swiftpico dependencies resolve` after changing intent; ordinary builds only
+regenerate CMake from the existing lock and never select a newer revision.
 
-### Swift libraries
+## Clang modules
 
-First add the package and its product to `Package.swift` as usual:
+Put a module map and its public adapter header in a unique directory:
 
-```swift
-dependencies: [
-    .package(url: "https://github.com/example/EmbeddedMath.git", from: "1.0.0")
-],
-targets: [
-    .executableTarget(
-        name: "Blink",
-        dependencies: [
-            .product(name: "PicoKit", package: "PicoKit"),
-            .product(name: "EmbeddedMath", package: "EmbeddedMath")
-        ]
-    )
-]
+```text
+Firmware/Interop/Modules/ST7789/
+  ST7789Adapter.h
+  module.modulemap
 ```
 
-Run `swift package resolve`, then add its checkout target to
-`Firmware/Dependencies.cmake`. The firmware build compiles that target for the
-selected Pico architecture, creates an importable Swift module, and links it
-into the final executable:
-
-```swift
-import PicoKit
-import EmbeddedMath
+```modulemap
+module ST7789Adapter {
+  header "ST7789Adapter.h"
+  export *
+}
 ```
 
-Only Foundation-free, Embedded Swift-compatible package targets can be used in
-firmware. SwiftPM may still build a package on macOS even when the package uses
-host-only APIs, so `swiftpico build` is the final compatibility check.
+Then use `import ST7789Adapter` in application Swift. PicoKit discovers all
+application module maps, rejects duplicate module names, and passes them only
+to the application Swift target.
 
-`Firmware/Dependencies.cmake` is ordinary CMake and is included after PicoKit
-has defined the application target. For the checked-out Swift target, add:
+## Bridging fallback and callbacks
 
-```cmake
-picokit_add_swift_library(EmbeddedMath
-    SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../Dependencies/EmbeddedMath/Sources/EmbeddedMath")
-target_link_libraries(${PICOKIT_PRODUCT} PRIVATE EmbeddedMath)
-```
+Use `AppInterop.h` as the application umbrella header when configuration-header
+ordering or platform headers make a standalone module impractical. Normalize
+function-like macros behind C adapter functions; importing a header does not
+turn arbitrary C macros into a stable Swift API.
 
-For C/C++ dependencies, use `FetchContent` or `add_subdirectory`, then link
-the dependency's exported CMake target to `${PICOKIT_PRODUCT}`. Keep platform
-setup inside the dependency file rather than modifying PicoKit's SDK bridge.
+Declare callbacks implemented by Swift in `Callbacks.h`. Implement the exact C
+signature with the toolchain's C-export annotation. `swiftpico doctor` compiles
+a Swift callback, a C caller, and their combined object instead of trusting a
+version number.
+
+Keep the ABI to fixed-width integers, simple enums and structs, pointer-length
+pairs, opaque handles, and explicit status codes. C++ classes stay behind
+`extern "C"` adapters with explicit create/destroy functions. Avoid exceptions,
+RTTI, OS dependencies, and ownership hidden in global constructors.
+
+Legacy `Firmware/Dependencies.cmake` remains supported. Run
+`swiftpico dependencies migrate` to create the v0.2 structure without deleting
+that file, migrate one entry at a time, and remove the legacy file only after
+the generated build matches.

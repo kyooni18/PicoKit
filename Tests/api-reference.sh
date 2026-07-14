@@ -7,8 +7,9 @@ reference="$root/Docs/11-api-reference.md"
 for symbol in \
     PicoChip PicoBoard PicoKitError PicoPin Duration Frequency PinMode PinState \
     DigitalIO PicoGPIO BoardLED Clock USBSerial PicoSerial Serial Pico UARTInstance \
-    PicoUART PWMChannel PicoPWM ADCChannel PicoADC I2CInstance PicoI2C SPIInstance \
-    PicoSPI GPIOInterruptEdge PicoInterrupts PicoWatchdog pinMode digitalWrite \
+    PicoUART PWMChannel PicoPWM PicoBacklight ADCChannel PicoADC I2CInstance PicoI2C SPIInstance \
+    SPIMode SPIBitOrder SPIDataBits PicoSPI PinPull PinDriveStrength PinSlewRate \
+    GPIOInterruptEdge PicoInterrupts PicoWatchdog pinMode digitalWrite \
     digitalRead analogRead analogWrite delay delayMicroseconds millis micros sleep \
     sleepMicroseconds
 do

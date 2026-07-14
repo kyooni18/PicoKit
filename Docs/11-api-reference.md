@@ -16,12 +16,15 @@ SwiftPM build unless noted otherwise.
 |---|---|---|
 | `PicoChip` | `.rp2040`, `.rp2350` | Chip family. |
 | `PicoBoard` | `.pico`, `.picoW`, `.pico2`, `.pico2W` | `chip`, `cmakeName`, `onboardLEDPin`, `onboardLED`, and `init?(configurationName:)`. Configuration also accepts `pico-w` and `pico2-w`. |
-| `PicoKitError` | `invalidPin`, `invalidFrequency`, `invalidTimeout`, `invalidAddress`, `unavailable`, `timedOut`, `ioFailure`, `ownershipConflict` | All throwing APIs use this error type. `description` is public. |
-| `PicoPin` | `init(_:) throws`, `init?(rawValue:)` | GPIO `0...29`; exposes `rawValue` and `description`; comparable. |
+| `PicoKitError` | `invalidPin`, `invalidPeripheralPin`, `invalidFrequency`, `invalidTimeout`, `invalidAddress`, `unavailable`, `timedOut`, `partialTransfer`, `ioFailure`, `ownershipConflict` | All throwing APIs use this error type. `description` is public. |
+| `PicoPin` | `init(_:) throws`, `init?(rawValue:)`, `.gpio0` ... `.gpio29` | GPIO `0...29`; exposes `rawValue` and `description`; comparable. |
 | `Duration` | `.microseconds(_)`, `.milliseconds(_)`, `.seconds(_)` | Positive duration factories; exposes `microseconds`; comparable. |
 | `Frequency` | `.hertz(_)`, `.kilohertz(_)`, `.megahertz(_)` | Positive frequency factories; exposes `hertz`; comparable. |
 | `PinMode` | `.input`, `.output` | GPIO direction. |
 | `PinState` | `.low`, `.high` | Also exposes `isHigh` and `toggled`. |
+| `PinPull` | `.none`, `.up`, `.down` | GPIO pull resistor. |
+| `PinDriveStrength` | `.milliamps2`, `.milliamps4`, `.milliamps8`, `.milliamps12` | GPIO output drive. |
+| `PinSlewRate` | `.slow`, `.fast` | GPIO edge slew rate. |
 
 ### Testable GPIO protocol
 
@@ -48,6 +51,10 @@ final class PicoGPIO: DigitalIO {
     let chip: PicoChip
     init(chip: PicoChip = .rp2040)
     func setMode(_ pin: PicoPin, mode: PinMode) throws
+    func configure(_ pin: PicoPin, mode: PinMode, initialState: PinState,
+                   pull: PinPull, driveStrength: PinDriveStrength,
+                   slewRate: PinSlewRate) throws
+    func resetPulse(_ pin: PicoPin, activeState: PinState, duration: Duration) throws
     func write(_ pin: PicoPin, state: PinState) throws
     func read(_ pin: PicoPin) throws -> PinState
     func toggle(_ pin: PicoPin) throws
@@ -152,6 +159,14 @@ final class PicoPWM {
     func analogWrite(_ duty: UInt16) throws
 }
 
+final class PicoBacklight {
+    init(pin: PicoPin, frequency: Frequency = .kilohertz(20), activeHigh: Bool = true) throws
+    func setBrightness(_ value: UInt8) throws
+    func setBrightness(_ value: UInt16) throws
+    func off() throws
+    func fullOn() throws
+}
+
 func analogWrite(_ pin: Int, _ duty: UInt8, using pwm: PicoPWM) throws
 func analogWrite(_ pin: Int, _ duty: UInt16, using pwm: PicoPWM) throws
 ```
@@ -183,10 +198,25 @@ final class PicoI2C {
 }
 
 enum SPIInstance: UInt32 { case spi0, spi1 }
+enum SPIMode: UInt32 { case mode0, mode1, mode2, mode3 }
+enum SPIBitOrder: UInt32 { case mostSignificantBitFirst, leastSignificantBitFirst }
+enum SPIDataBits: UInt32 { case eight = 8, sixteen = 16 }
 
 final class PicoSPI {
-    init(_ instance: SPIInstance, frequency: Frequency, sck: PicoPin, mosi: PicoPin, miso: PicoPin) throws
+    init(_ instance: SPIInstance, frequency: Frequency, sck: PicoPin,
+         mosi: PicoPin, miso: PicoPin? = nil, mode: SPIMode = .mode0,
+         bitOrder: SPIBitOrder = .mostSignificantBitFirst,
+         dataBits: SPIDataBits = .eight, chipSelect: PicoPin? = nil,
+         gpio: PicoGPIO? = nil) throws
     let instance: SPIInstance
+    let actualFrequency: Frequency
+    let dataBits: SPIDataBits
+    let chipSelect: PicoPin?
+    func select() throws
+    func deselect() throws
+    func write(_ bytes: [UInt8]) throws
+    func write(_ bytes: [UInt8], timeout: Duration) throws
+    func write(_ words: [UInt16]) throws
     func transfer(_ bytes: [UInt8], timeout: Duration) throws -> [UInt8]
 }
 ```
@@ -194,8 +224,10 @@ final class PicoSPI {
 `analogRead(pin:using:)` accepts GPIO26 through GPIO29. I2C validates 7-bit
 addresses in `0x08...0x77`, rejects a negative count, and reports
 `invalidTimeout` if a duration exceeds the SDK's `UInt32`-microsecond limit.
-SPI returns one received byte per transmitted byte. Deadline failures use
-`timedOut`.
+SPI supports write-only operation without MISO, modes 0 through 3, both bit
+orders, 8/16-bit formats, actual-baud reporting, and explicit chip-select.
+Blocking writes use the SDK bulk path without an RX allocation; timed writes
+report `partialTransfer`. Full-duplex deadline failures use `timedOut`.
 
 ## Interrupts and watchdog
 

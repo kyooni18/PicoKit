@@ -23,6 +23,46 @@ public final class PicoGPIO: DigitalIO {
         #endif
     }
 
+    public func configure(
+        _ pin: PicoPin,
+        mode: PinMode,
+        initialState: PinState = .low,
+        pull: PinPull = .none,
+        driveStrength: PinDriveStrength = .milliamps4,
+        slewRate: PinSlewRate = .slow
+    ) throws(PicoKitError) {
+        #if PICOKIT_PICO_SDK
+        let status = picokit_gpio_configure(
+            pin.rawValue,
+            mode == .output ? 1 : 0,
+            initialState == .high ? 1 : 0,
+            pull.rawValue,
+            driveStrength.rawValue,
+            slewRate.rawValue
+        )
+        guard status == 0 else {
+            throw PicoKitError.ioFailure(operation: "GPIO setup", status: status)
+        }
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
+    public func resetPulse(
+        _ pin: PicoPin,
+        activeState: PinState = .low,
+        duration: Duration
+    ) throws(PicoKitError) {
+        try configure(pin, mode: .output, initialState: activeState.toggled)
+        try write(pin, state: activeState)
+        #if PICOKIT_PICO_SDK
+        picokit_sleep_us(duration.microseconds)
+        try write(pin, state: activeState.toggled)
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
     public func write(_ pin: PicoPin, state: PinState) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_gpio_write(pin.rawValue, state == .high ? 1 : 0)
@@ -91,4 +131,3 @@ public final class BoardLED {
         #endif
     }
 }
-

@@ -144,6 +144,23 @@ target_compile_options(${PICOKIT_PRODUCT} PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:S
     -I ${PICOKIT_SWIFT_MODULE_DIRECTORY}
 >")
 target_link_libraries(${PICOKIT_PRODUCT} PRIVATE PicoKit)
+
+# Application-owned interoperability stays outside PicoKit's bridge. C and
+# C++ adapters in Firmware/Interop are compiled into the firmware target, while
+# their umbrella header and module maps are imported only by application Swift.
+if(NOT DEFINED PICOKIT_APP_INTEROP_DIR)
+    set(PICOKIT_APP_INTEROP_DIR "${CMAKE_SOURCE_DIR}/Interop")
+endif()
+if(EXISTS "${PICOKIT_APP_INTEROP_DIR}")
+    file(GLOB_RECURSE PICOKIT_APP_INTEROP_SOURCES CONFIGURE_DEPENDS
+        "${PICOKIT_APP_INTEROP_DIR}/*.c"
+        "${PICOKIT_APP_INTEROP_DIR}/*.cc"
+        "${PICOKIT_APP_INTEROP_DIR}/*.cpp")
+    if(PICOKIT_APP_INTEROP_SOURCES)
+        target_sources(${PICOKIT_PRODUCT} PRIVATE ${PICOKIT_APP_INTEROP_SOURCES})
+    endif()
+    target_include_directories(${PICOKIT_PRODUCT} PRIVATE "${PICOKIT_APP_INTEROP_DIR}")
+endif()
 pico_enable_stdio_usb(${PICOKIT_PRODUCT} 1)
 pico_enable_stdio_uart(${PICOKIT_PRODUCT} 0)
 pico_add_extra_outputs(${PICOKIT_PRODUCT})
@@ -192,12 +209,56 @@ function(picokit_add_swift_library target)
     endif()
 endfunction()
 
-# A firmware project's dependencies live next to its CMakeLists.txt by
-# default. A caller that keeps them elsewhere can set PICOKIT_DEPENDENCIES_FILE
-# before including this file.
+# Generated v0.2 dependencies are deterministic and read-only. Preserve the
+# v0.1 Dependencies.cmake hook, then allow an intentionally untracked local
+# extension file. A caller can still override PICOKIT_DEPENDENCIES_FILE.
 if(NOT DEFINED PICOKIT_DEPENDENCIES_FILE)
     set(PICOKIT_DEPENDENCIES_FILE "${CMAKE_SOURCE_DIR}/Dependencies.cmake")
 endif()
+set(PICOKIT_GENERATED_DEPENDENCIES_FILE "${CMAKE_SOURCE_DIR}/Generated/Dependencies.cmake")
+if(EXISTS "${PICOKIT_GENERATED_DEPENDENCIES_FILE}")
+    include("${PICOKIT_GENERATED_DEPENDENCIES_FILE}")
+endif()
 if(EXISTS "${PICOKIT_DEPENDENCIES_FILE}")
     include("${PICOKIT_DEPENDENCIES_FILE}")
+endif()
+if(EXISTS "${CMAKE_SOURCE_DIR}/Dependencies.local.cmake")
+    include("${CMAKE_SOURCE_DIR}/Dependencies.local.cmake")
+endif()
+
+# Discover application module maps after dependency CMake has run. Duplicate
+# module names are rejected here so the Clang importer never silently chooses
+# a header from the wrong library.
+set(PICOKIT_APP_IMPORT_FLAGS ${PICOKIT_DEPENDENCY_CLANG_FLAGS})
+set(PICOKIT_APP_MODULE_NAMES)
+set(PICOKIT_APP_MODULE_MAPS ${PICOKIT_DEPENDENCY_MODULE_MAPS})
+if(EXISTS "${PICOKIT_APP_INTEROP_DIR}")
+    file(GLOB_RECURSE PICOKIT_LOCAL_MODULE_MAPS CONFIGURE_DEPENDS
+        "${PICOKIT_APP_INTEROP_DIR}/*module.modulemap")
+    list(APPEND PICOKIT_APP_MODULE_MAPS ${PICOKIT_LOCAL_MODULE_MAPS})
+    foreach(module_map ${PICOKIT_APP_MODULE_MAPS})
+        file(STRINGS "${module_map}" module_lines REGEX "^[ \t]*(explicit[ \t]+)?module[ \t]+[A-Za-z_][A-Za-z0-9_]*")
+        foreach(module_line ${module_lines})
+            string(REGEX REPLACE "^[ \t]*(explicit[ \t]+)?module[ \t]+([A-Za-z_][A-Za-z0-9_]*).*$" "\\2" module_name "${module_line}")
+            if(module_name IN_LIST PICOKIT_APP_MODULE_NAMES)
+                message(FATAL_ERROR "Duplicate application Clang module '${module_name}' in ${module_map}")
+            endif()
+            list(APPEND PICOKIT_APP_MODULE_NAMES "${module_name}")
+        endforeach()
+        get_filename_component(module_directory "${module_map}" DIRECTORY)
+        list(APPEND PICOKIT_APP_IMPORT_FLAGS "-Xcc" "-fmodule-map-file=${module_map}" "-Xcc" "-I${module_directory}")
+    endforeach()
+
+    if(EXISTS "${PICOKIT_APP_INTEROP_DIR}/AppInterop.h")
+        list(APPEND PICOKIT_APP_IMPORT_FLAGS
+            "-import-bridging-header" "${PICOKIT_APP_INTEROP_DIR}/AppInterop.h")
+    endif()
+endif()
+if(PICOKIT_APP_IMPORT_FLAGS)
+    # Keep every -Xcc paired with its following Clang option. CMake otherwise
+    # de-duplicates repeated -Xcc list elements and exposes later Clang flags
+    # directly to swiftc.
+    list(JOIN PICOKIT_APP_IMPORT_FLAGS " " PICOKIT_APP_IMPORT_FLAGS_SHELL)
+    target_compile_options(${PICOKIT_PRODUCT} PRIVATE
+        "$<$<COMPILE_LANGUAGE:Swift>:SHELL:${PICOKIT_APP_IMPORT_FLAGS_SHELL}>")
 endif()

@@ -19,5 +19,6 @@ the peripheral guides are there when your project needs them.
 11. [Complete API reference](11-api-reference.md)
 12. [High-level API](12-high-level-api.md)
 13. [External libraries](13-external-libraries.md)
+14. [v0.2 application interoperability and migration](14-v0.2-interoperability.md)
 
 Each chapter is a standalone Markdown file and may be read independently.

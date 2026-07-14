@@ -20,6 +20,8 @@ void picokit_gpio_set_direction(uint32_t pin, uint32_t output);
 void picokit_gpio_write(uint32_t pin, uint32_t value);
 uint32_t picokit_gpio_read(uint32_t pin);
 void picokit_gpio_toggle(uint32_t pin);
+int32_t picokit_gpio_configure(uint32_t pin, uint32_t output, uint32_t initial_value,
+                               uint32_t pull, uint32_t drive, uint32_t slew);
 
 uint64_t picokit_time_us(void);
 void picokit_sleep_us(uint64_t microseconds);
@@ -36,6 +38,13 @@ int32_t picokit_i2c_read(uint32_t instance, uint32_t address, uint8_t *bytes, ui
 
 int32_t picokit_spi_init(uint32_t instance, uint32_t frequency_hz, uint32_t sck, uint32_t mosi, uint32_t miso);
 int32_t picokit_spi_transfer(uint32_t instance, const uint8_t *tx, uint8_t *rx, uint32_t count, uint64_t timeout_us);
+int32_t picokit_spi_init_config(uint32_t instance, uint32_t frequency_hz, uint32_t sck,
+                                uint32_t mosi, int32_t miso, uint32_t mode,
+                                uint32_t bit_order, uint32_t data_bits,
+                                uint32_t *actual_frequency_hz);
+int32_t picokit_spi_write(uint32_t instance, const uint8_t *bytes, uint32_t count);
+int32_t picokit_spi_write_timeout(uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us);
+int32_t picokit_spi_write16(uint32_t instance, const uint16_t *words, uint32_t count);
 
 int32_t picokit_interrupt_enable(uint32_t pin, uint32_t edge);
 uint32_t picokit_interrupt_take(uint32_t pin);

@@ -71,6 +71,7 @@ struct PicoKitHostTests {
         require(PicoBoard.pico2W.cmakeName == "pico2_w", "CMake board spelling mismatch")
         require(PicoBoard.pico.onboardLED == 25, "Pico LED mismatch")
         require(PicoBoard.picoW.onboardLED == nil, "Pico W should use BoardLED")
+        require(PicoPin.gpio18.rawValue == 18, "GPIO convenience value mismatch")
 
         for value in 0...29 {
             let pin = try PicoPin(value)
@@ -79,6 +80,20 @@ struct PicoKitHostTests {
         }
         requireError(.invalidPin(-1), "negative GPIO accepted") { _ = try PicoPin(-1) }
         requireError(.invalidPin(30), "GPIO30 accepted") { _ = try PicoPin(30) }
+
+        let busFrequency = try Frequency.megahertz(1)
+        requireError(
+            .invalidPeripheralPin(peripheral: "spi0 SCK", pin: .gpio10),
+            "SPI0 accepted an SPI1 clock pin"
+        ) {
+            _ = try PicoSPI(.spi0, frequency: busFrequency, sck: .gpio10, mosi: .gpio11)
+        }
+        requireError(
+            .invalidPeripheralPin(peripheral: "i2c0 SDA", pin: .gpio2),
+            "I2C0 accepted an I2C1 data pin"
+        ) {
+            _ = try PicoI2C(.i2c0, frequency: busFrequency, sda: .gpio2, scl: .gpio3)
+        }
 
         try require(try Frequency.kilohertz(400).hertz == 400_000, "frequency conversion failed")
         try require(try Frequency.megahertz(1).hertz == 1_000_000, "MHz conversion failed")
@@ -97,6 +112,11 @@ struct PicoKitHostTests {
         require(PinState.low.toggled == .high, "low toggle failed")
         require(PinState.high.toggled == .low, "high toggle failed")
         require(PicoKitError.timedOut(operation: "read").description == "read timed out", "error description failed")
+        require(
+            PicoKitError.partialTransfer(operation: "SPI write", transferred: 2, expected: 4).description ==
+                "SPI write transferred 2 of 4 elements",
+            "partial transfer description failed"
+        )
     }
 
     private static func testGPIOFacade() throws {
@@ -146,5 +166,11 @@ struct PicoKitHostTests {
             let _: (PicoSerial) -> Bool = { $0.available }
             let _: (USBSerial, Duration) throws -> UInt8 = { try $0.read(timeout: $1) }
             let _: (USBSerial, [UInt8]) throws -> Void = { try $0.write($1) }
+            let _: SPIMode = .mode3
+            let _: SPIBitOrder = .leastSignificantBitFirst
+            let _: SPIDataBits = .sixteen
+            let _: PinPull = .up
+            let _: PinDriveStrength = .milliamps12
+            let _: PinSlewRate = .fast
     }
 }
