@@ -14,7 +14,7 @@ public final class PicoGPIO: DigitalIO {
         self.chip = chip
     }
 
-    public func setMode(_ pin: PicoPin, mode: PinMode) throws {
+    public func setMode(_ pin: PicoPin, mode: PinMode) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_gpio_init(pin.rawValue)
         picokit_gpio_set_direction(pin.rawValue, mode == .output ? 1 : 0)
@@ -23,7 +23,7 @@ public final class PicoGPIO: DigitalIO {
         #endif
     }
 
-    public func write(_ pin: PicoPin, state: PinState) throws {
+    public func write(_ pin: PicoPin, state: PinState) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_gpio_write(pin.rawValue, state == .high ? 1 : 0)
         #else
@@ -31,7 +31,7 @@ public final class PicoGPIO: DigitalIO {
         #endif
     }
 
-    public func read(_ pin: PicoPin) throws -> PinState {
+    public func read(_ pin: PicoPin) throws(PicoKitError) -> PinState {
         #if PICOKIT_PICO_SDK
         return picokit_gpio_read(pin.rawValue) == 0 ? .low : .high
         #else
@@ -39,7 +39,7 @@ public final class PicoGPIO: DigitalIO {
         #endif
     }
 
-    public func toggle(_ pin: PicoPin) throws {
+    public func toggle(_ pin: PicoPin) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_gpio_toggle(pin.rawValue)
         #else
@@ -47,25 +47,25 @@ public final class PicoGPIO: DigitalIO {
         #endif
     }
 
-    public func pinMode(_ pin: Int, _ mode: PinMode) throws {
+    public func pinMode(_ pin: Int, _ mode: PinMode) throws(PicoKitError) {
         try setMode(PicoPin(pin), mode: mode)
     }
 
-    public func digitalWrite(_ pin: Int, _ state: PinState) throws {
+    public func digitalWrite(_ pin: Int, _ state: PinState) throws(PicoKitError) {
         try write(PicoPin(pin), state: state)
     }
 
-    public func digitalRead(_ pin: Int) throws -> PinState {
+    public func digitalRead(_ pin: Int) throws(PicoKitError) -> PinState {
         try read(PicoPin(pin))
     }
 
-    public func digitalToggle(_ pin: Int) throws {
+    public func digitalToggle(_ pin: Int) throws(PicoKitError) {
         try toggle(PicoPin(pin))
     }
 }
 
 public final class BoardLED {
-    public init(board: PicoBoard) throws {
+    public init(board: PicoBoard) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         guard picokit_status_led_init() == 0 else {
             throw PicoKitError.unavailable("board status LED")
@@ -75,7 +75,7 @@ public final class BoardLED {
         #endif
     }
 
-    public func set(_ state: PinState) throws {
+    public func set(_ state: PinState) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_status_led_write(state == .high ? 1 : 0)
         #else
@@ -83,7 +83,7 @@ public final class BoardLED {
         #endif
     }
 
-    public func toggle() throws {
+    public func toggle() throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_status_led_toggle()
         #else

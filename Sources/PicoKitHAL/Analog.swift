@@ -7,7 +7,7 @@ public enum PWMChannel: Sendable { case a, b }
 public final class PicoPWM {
     public let pin: PicoPin
 
-    public init(pin: PicoPin, frequency: Frequency) throws {
+    public init(pin: PicoPin, frequency: Frequency) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         let status = picokit_pwm_init(pin.rawValue, frequency.hertz)
         guard status == 0 else {
@@ -19,7 +19,7 @@ public final class PicoPWM {
         #endif
     }
 
-    public func setDutyCycle(_ fraction: UInt16) throws {
+    public func setDutyCycle(_ fraction: UInt16) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_pwm_set_level(pin.rawValue, fraction)
         #else
@@ -27,12 +27,12 @@ public final class PicoPWM {
         #endif
     }
 
-    public func analogWrite(_ duty: UInt8) throws { try setDutyCycle(UInt16(duty) * 257) }
-    public func analogWrite(_ duty: UInt16) throws { try setDutyCycle(duty) }
+    public func analogWrite(_ duty: UInt8) throws(PicoKitError) { try setDutyCycle(UInt16(duty) * 257) }
+    public func analogWrite(_ duty: UInt16) throws(PicoKitError) { try setDutyCycle(duty) }
 }
 
 @inlinable
-public func analogWrite(_ pin: Int, _ duty: UInt8, using pwm: PicoPWM) throws {
+public func analogWrite(_ pin: Int, _ duty: UInt8, using pwm: PicoPWM) throws(PicoKitError) {
     let validated = try PicoPin(pin)
     guard validated == pwm.pin else {
         throw PicoKitError.ownershipConflict("PWM is configured for \(pwm.pin), not \(validated)")
@@ -41,7 +41,7 @@ public func analogWrite(_ pin: Int, _ duty: UInt8, using pwm: PicoPWM) throws {
 }
 
 @inlinable
-public func analogWrite(_ pin: Int, _ duty: UInt16, using pwm: PicoPWM) throws {
+public func analogWrite(_ pin: Int, _ duty: UInt16, using pwm: PicoPWM) throws(PicoKitError) {
     let validated = try PicoPin(pin)
     guard validated == pwm.pin else {
         throw PicoKitError.ownershipConflict("PWM is configured for \(pwm.pin), not \(validated)")
@@ -54,7 +54,7 @@ public enum ADCChannel: UInt32, CaseIterable, Sendable {
 }
 
 public final class PicoADC {
-    public init() throws {
+    public init() throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_adc_init()
         #else
@@ -62,7 +62,7 @@ public final class PicoADC {
         #endif
     }
 
-    public func read(_ channel: ADCChannel) throws -> UInt16 {
+    public func read(_ channel: ADCChannel) throws(PicoKitError) -> UInt16 {
         #if PICOKIT_PICO_SDK
         let value = picokit_adc_read(channel.rawValue)
         guard value >= 0 else {
@@ -76,11 +76,11 @@ public final class PicoADC {
 }
 
 @inlinable
-public func analogRead(_ channel: ADCChannel, using adc: PicoADC) throws -> UInt16 {
+public func analogRead(_ channel: ADCChannel, using adc: PicoADC) throws(PicoKitError) -> UInt16 {
     try adc.read(channel)
 }
 
-public func analogRead(_ pin: Int, using adc: PicoADC) throws -> UInt16 {
+public func analogRead(_ pin: Int, using adc: PicoADC) throws(PicoKitError) -> UInt16 {
     let channel: ADCChannel
     switch pin {
     case 26: channel = .gpio26

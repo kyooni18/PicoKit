@@ -12,7 +12,7 @@ public enum Clock {
     }
 
     /// This blocks the calling core; it is not callable from an interrupt.
-    public static func sleep(for duration: Duration) throws {
+    public static func sleep(for duration: Duration) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_sleep_us(duration.microseconds)
         #else
@@ -22,12 +22,12 @@ public enum Clock {
 }
 
 /// Arduino-compatible timing spellings. A zero delay is a valid no-op.
-public func delay(_ milliseconds: UInt64) throws {
+public func delay(_ milliseconds: UInt64) throws(PicoKitError) {
     guard milliseconds != 0 else { return }
     try Clock.sleep(for: Duration.milliseconds(milliseconds))
 }
 
-public func delayMicroseconds(_ microseconds: UInt64) throws {
+public func delayMicroseconds(_ microseconds: UInt64) throws(PicoKitError) {
     guard microseconds != 0 else { return }
     try Clock.sleep(for: Duration.microseconds(microseconds))
 }

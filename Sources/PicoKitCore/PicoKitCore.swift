@@ -55,7 +55,7 @@ public enum PicoKitError: Error, Equatable, Sendable, CustomStringConvertible {
 
 public struct PicoPin: RawRepresentable, Hashable, Sendable, Comparable, CustomStringConvertible {
     public let rawValue: UInt32
-    public init(_ value: Int) throws {
+    public init(_ value: Int) throws(PicoKitError) {
         guard (0...29).contains(value) else { throw PicoKitError.invalidPin(value) }
         rawValue = UInt32(value)
     }
@@ -67,13 +67,13 @@ public struct PicoPin: RawRepresentable, Hashable, Sendable, Comparable, CustomS
 public struct Duration: Hashable, Sendable, Comparable {
     public let microseconds: UInt64
     private init(microseconds: UInt64) { self.microseconds = microseconds }
-    public static func microseconds(_ value: UInt64) throws -> Self { guard value > 0 else { throw PicoKitError.invalidTimeout(value) }; return Self(microseconds: value) }
-    public static func milliseconds(_ value: UInt64) throws -> Self {
+    public static func microseconds(_ value: UInt64) throws(PicoKitError) -> Self { guard value > 0 else { throw PicoKitError.invalidTimeout(value) }; return Self(microseconds: value) }
+    public static func milliseconds(_ value: UInt64) throws(PicoKitError) -> Self {
         let result = value.multipliedReportingOverflow(by: 1_000)
         guard !result.overflow else { throw PicoKitError.invalidTimeout(value) }
         return try microseconds(result.partialValue)
     }
-    public static func seconds(_ value: UInt64) throws -> Self {
+    public static func seconds(_ value: UInt64) throws(PicoKitError) -> Self {
         let result = value.multipliedReportingOverflow(by: 1_000_000)
         guard !result.overflow else { throw PicoKitError.invalidTimeout(value) }
         return try microseconds(result.partialValue)
@@ -84,13 +84,13 @@ public struct Duration: Hashable, Sendable, Comparable {
 public struct Frequency: Hashable, Sendable, Comparable {
     public let hertz: UInt32
     private init(hertz: UInt32) { self.hertz = hertz }
-    public static func hertz(_ value: UInt32) throws -> Self { guard value > 0 else { throw PicoKitError.invalidFrequency(value) }; return Self(hertz: value) }
-    public static func kilohertz(_ value: UInt32) throws -> Self {
+    public static func hertz(_ value: UInt32) throws(PicoKitError) -> Self { guard value > 0 else { throw PicoKitError.invalidFrequency(value) }; return Self(hertz: value) }
+    public static func kilohertz(_ value: UInt32) throws(PicoKitError) -> Self {
         let result = value.multipliedReportingOverflow(by: 1_000)
         guard !result.overflow else { throw PicoKitError.invalidFrequency(value) }
         return try hertz(result.partialValue)
     }
-    public static func megahertz(_ value: UInt32) throws -> Self {
+    public static func megahertz(_ value: UInt32) throws(PicoKitError) -> Self {
         let result = value.multipliedReportingOverflow(by: 1_000_000)
         guard !result.overflow else { throw PicoKitError.invalidFrequency(value) }
         return try hertz(result.partialValue)
@@ -109,24 +109,24 @@ public enum PinState: CaseIterable, Sendable {
 /// instances are single-threaded: do not call an instance concurrently from
 /// tasks, interrupt handlers, or multiple cores.
 public protocol DigitalIO: AnyObject {
-    func setMode(_ pin: PicoPin, mode: PinMode) throws
-    func write(_ pin: PicoPin, state: PinState) throws
-    func read(_ pin: PicoPin) throws -> PinState
+    func setMode(_ pin: PicoPin, mode: PinMode) throws(PicoKitError)
+    func write(_ pin: PicoPin, state: PinState) throws(PicoKitError)
+    func read(_ pin: PicoPin) throws(PicoKitError) -> PinState
 }
 
 // Familiar Arduino-style spellings. The Int overload is deliberately
 // throwing: invalid GPIO numbers are reported before the SDK is touched.
 @inlinable
-public func pinMode(_ pin: Int, _ mode: PinMode, using gpio: some DigitalIO) throws {
+public func pinMode(_ pin: Int, _ mode: PinMode, using gpio: some DigitalIO) throws(PicoKitError) {
     try gpio.setMode(PicoPin(pin), mode: mode)
 }
 
 @inlinable
-public func digitalWrite(_ pin: Int, _ state: PinState, using gpio: some DigitalIO) throws {
+public func digitalWrite(_ pin: Int, _ state: PinState, using gpio: some DigitalIO) throws(PicoKitError) {
     try gpio.write(PicoPin(pin), state: state)
 }
 
 @inlinable
-public func digitalRead(_ pin: Int, using gpio: some DigitalIO) throws -> PinState {
+public func digitalRead(_ pin: Int, using gpio: some DigitalIO) throws(PicoKitError) -> PinState {
     try gpio.read(PicoPin(pin))
 }

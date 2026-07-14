@@ -5,9 +5,9 @@ private final class FakeGPIO: DigitalIO {
     var modes: [(PicoPin, PinMode)] = []
     var writes: [(PicoPin, PinState)] = []
     var state: PinState = .low
-    func setMode(_ pin: PicoPin, mode: PinMode) throws { modes.append((pin, mode)) }
-    func write(_ pin: PicoPin, state: PinState) throws { writes.append((pin, state)); self.state = state }
-    func read(_ pin: PicoPin) throws -> PinState { state }
+    func setMode(_ pin: PicoPin, mode: PinMode) throws(PicoKitError) { modes.append((pin, mode)) }
+    func write(_ pin: PicoPin, state: PinState) throws(PicoKitError) { writes.append((pin, state)); self.state = state }
+    func read(_ pin: PicoPin) throws(PicoKitError) -> PinState { state }
 }
 
 private final class FakeSerialBackend: PicoSerialBackend {
@@ -16,9 +16,9 @@ private final class FakeSerialBackend: PicoSerialBackend {
     var byteWrites: [[UInt8]] = []
     var readCount = 0
 
-    func write(_ text: String) throws { textWrites.append(text) }
-    func write(_ bytes: [UInt8]) throws { byteWrites.append(bytes) }
-    func read() throws -> UInt8? {
+    func write(_ text: String) throws(PicoKitError) { textWrites.append(text) }
+    func write(_ bytes: [UInt8]) throws(PicoKitError) { byteWrites.append(bytes) }
+    func read() throws(PicoKitError) -> UInt8? {
         readCount += 1
         return reads.isEmpty ? nil : reads.removeFirst()
     }

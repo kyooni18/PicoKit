@@ -3,7 +3,7 @@ import PicoKitCore
 #endif
 
 public final class USBSerial {
-    public init() throws {
+    public init() throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         picokit_stdio_init()
         #else
@@ -11,7 +11,7 @@ public final class USBSerial {
         #endif
     }
 
-    public func write(_ text: String) throws {
+    public func write(_ text: String) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         text.withCString { picokit_stdio_write($0) }
         #else
@@ -20,7 +20,7 @@ public final class USBSerial {
     }
 
     /// Writes raw bytes without interpreting them as UTF-8 or a C string.
-    public func write(_ bytes: [UInt8]) throws {
+    public func write(_ bytes: [UInt8]) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         guard !bytes.isEmpty else { return }
         bytes.withUnsafeBufferPointer {
@@ -32,7 +32,7 @@ public final class USBSerial {
     }
 
     /// Returns the next USB CDC byte immediately, or `nil` when no input is waiting.
-    public func read() throws -> UInt8? {
+    public func read() throws(PicoKitError) -> UInt8? {
         #if PICOKIT_PICO_SDK
         var byte: UInt8 = 0
         let result = picokit_stdio_read(&byte, 0)
@@ -47,7 +47,7 @@ public final class USBSerial {
     }
 
     /// Waits for one USB CDC byte until `timeout` expires.
-    public func read(timeout: Duration) throws -> UInt8 {
+    public func read(timeout: Duration) throws(PicoKitError) -> UInt8 {
         #if PICOKIT_PICO_SDK
         var byte: UInt8 = 0
         let result = picokit_stdio_read(&byte, timeout.microseconds)
@@ -62,18 +62,91 @@ public final class USBSerial {
     }
 }
 
+#if PICOKIT_PICO_SDK
+
+/// USB serial convenience API for firmware builds. Keep this concrete: calling
+/// a typed-throwing requirement through an existential currently erases it to
+/// `any Error`, which Embedded Swift cannot represent.
+public final class PicoSerial: @unchecked Sendable {
+    private lazy var usb = try! USBSerial()
+    private var pendingByte: UInt8?
+
+    public init() {}
+
+    public func write(_ text: String) {
+        try! usb.write(text)
+    }
+
+    public func write(_ bytes: [UInt8]) {
+        try! usb.write(bytes)
+    }
+
+    public func print(_ text: String) { write(text) }
+
+    public func println(_ text: String = "") {
+        write(text)
+        write("\n")
+    }
+
+    public var available: Bool {
+        if pendingByte != nil { return true }
+        pendingByte = try! usb.read()
+        return pendingByte != nil
+    }
+
+    public func read() -> UInt8? {
+        if let pendingByte {
+            self.pendingByte = nil
+            return pendingByte
+        }
+        return try! usb.read()
+    }
+}
+
+/// Concrete firmware facade that preserves typed errors for Embedded Swift.
+public final class Pico: @unchecked Sendable {
+    public let gpio = PicoGPIO()
+    public let serial = PicoSerial()
+
+    public init() {}
+
+    public func pinMode(_ pin: Int, _ mode: PinMode) {
+        try! gpio.setMode(PicoPin(pin), mode: mode)
+    }
+
+    public func digitalWrite(_ pin: Int, _ state: PinState) {
+        try! gpio.write(PicoPin(pin), state: state)
+    }
+
+    public func digitalRead(_ pin: Int) -> PinState {
+        try! gpio.read(PicoPin(pin))
+    }
+
+    public func sleep(_ milliseconds: UInt64) {
+        guard milliseconds != 0 else { return }
+        try! Clock.sleep(for: Duration.milliseconds(milliseconds))
+    }
+
+    public func sleepMicroseconds(_ microseconds: UInt64) {
+        guard microseconds != 0 else { return }
+        try! Clock.sleep(for: Duration.microseconds(microseconds))
+    }
+}
+
+#else
+
 protocol PicoSerialBackend: AnyObject {
-    func write(_ text: String) throws
-    func write(_ bytes: [UInt8]) throws
-    func read() throws -> UInt8?
+    func write(_ text: String) throws(PicoKitError)
+    func write(_ bytes: [UInt8]) throws(PicoKitError)
+    func read() throws(PicoKitError) -> UInt8?
 }
 
 private final class SDKSerialBackend: PicoSerialBackend {
     private lazy var usb = picoKitUnchecked { try USBSerial() }
 
-    func write(_ text: String) throws { try usb.write(text) }
-    func write(_ bytes: [UInt8]) throws { try usb.write(bytes) }
-    func read() throws -> UInt8? { try usb.read() }
+    func write(_ text: String) throws(PicoKitError) { try usb.write(text) }
+    func write(_ bytes: [UInt8]) throws(PicoKitError) { try usb.write(bytes) }
+    func read() throws(PicoKitError) -> UInt8? { try usb.read() }
 }
 
 /// Convert a low-level failure into a firmware trap for the convenience API.
@@ -164,6 +237,8 @@ public final class Pico: @unchecked Sendable {
     }
 }
 
+#endif
+
 public let pico = Pico()
 public let Serial = pico.serial
 
@@ -172,4 +247,3 @@ public func digitalWrite(_ pin: Int, _ state: PinState) { pico.digitalWrite(pin,
 public func digitalRead(_ pin: Int) -> PinState { pico.digitalRead(pin) }
 public func sleep(_ milliseconds: UInt64) { pico.sleep(milliseconds) }
 public func sleepMicroseconds(_ microseconds: UInt64) { pico.sleepMicroseconds(microseconds) }
-

@@ -8,7 +8,7 @@ public enum GPIOInterruptEdge: UInt32, Sendable { case rising = 1, falling = 2, 
 public final class PicoInterrupts {
     public init() {}
 
-    public func enable(_ pin: PicoPin, edge: GPIOInterruptEdge) throws {
+    public func enable(_ pin: PicoPin, edge: GPIOInterruptEdge) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         let status = picokit_interrupt_enable(pin.rawValue, edge.rawValue)
         guard status == 0 else {
@@ -31,7 +31,7 @@ public final class PicoInterrupts {
 public final class PicoWatchdog {
     public init() {}
 
-    public func enable(timeout: Duration, pauseOnDebug: Bool = true) throws {
+    public func enable(timeout: Duration, pauseOnDebug: Bool = true) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         guard timeout.microseconds <= UInt64(UInt32.max) * 1_000 else {
             throw PicoKitError.invalidTimeout(timeout.microseconds)

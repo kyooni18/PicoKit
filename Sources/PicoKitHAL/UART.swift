@@ -7,7 +7,7 @@ public enum UARTInstance: UInt32, Sendable { case uart0, uart1 }
 public final class PicoUART {
     public let instance: UARTInstance
 
-    public init(_ instance: UARTInstance, baudRate: Frequency, tx: PicoPin, rx: PicoPin) throws {
+    public init(_ instance: UARTInstance, baudRate: Frequency, tx: PicoPin, rx: PicoPin) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         let status = picokit_uart_init(instance.rawValue, baudRate.hertz, tx.rawValue, rx.rawValue)
         guard status == 0 else {
@@ -19,7 +19,7 @@ public final class PicoUART {
         #endif
     }
 
-    public func write(_ bytes: [UInt8], timeout: Duration) throws -> Int {
+    public func write(_ bytes: [UInt8], timeout: Duration) throws(PicoKitError) -> Int {
         #if PICOKIT_PICO_SDK
         let result = bytes.withUnsafeBufferPointer {
             picokit_uart_write(instance.rawValue, $0.baseAddress, UInt32($0.count), timeout.microseconds)
@@ -34,7 +34,7 @@ public final class PicoUART {
         #endif
     }
 
-    public func read(timeout: Duration) throws -> UInt8 {
+    public func read(timeout: Duration) throws(PicoKitError) -> UInt8 {
         #if PICOKIT_PICO_SDK
         var byte: UInt8 = 0
         let result = picokit_uart_read(instance.rawValue, &byte, timeout.microseconds)
