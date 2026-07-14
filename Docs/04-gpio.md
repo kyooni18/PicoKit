@@ -29,6 +29,25 @@ let rp2350GPIO = PicoGPIO.rp2350
 
 `PicoGPIO` implements `DigitalIO`, allowing alternate implementations and test doubles.
 
+### Coordinated GPIO fast path
+
+For a preconfigured group of pins, use the mask methods to update all selected
+pins with one SDK register operation. Bit `n` addresses GPION; bits above 29
+are ignored by PicoKit.
+
+```swift
+try gpio.configure(.gpio2, mode: .output)
+try gpio.configure(.gpio3, mode: .output)
+let dataBus: UInt32 = (1 << 2) | (1 << 3)
+
+try gpio.set(mask: dataBus)
+try gpio.clear(mask: dataBus)
+try gpio.toggle(mask: dataBus)
+```
+
+This is the right low-level form for coordinated control-pin changes. For a
+cycle-exact protocol or waveform, use PIO or a focused C implementation.
+
 ### Throwing Arduino-style GPIO helpers
 
 ```swift

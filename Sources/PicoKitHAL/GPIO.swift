@@ -87,6 +87,36 @@ public final class PicoGPIO: DigitalIO {
         #endif
     }
 
+    /// Sets every GPIO selected by `mask` high in one hardware operation.
+    /// Bits above GPIO29 are ignored.
+    public func set(mask: UInt32) throws(PicoKitError) {
+        #if PICOKIT_PICO_SDK
+        picokit_gpio_set_mask(mask)
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
+    /// Clears every GPIO selected by `mask` low in one hardware operation.
+    /// Bits above GPIO29 are ignored.
+    public func clear(mask: UInt32) throws(PicoKitError) {
+        #if PICOKIT_PICO_SDK
+        picokit_gpio_clear_mask(mask)
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
+    /// Toggles every GPIO selected by `mask` in one hardware operation.
+    /// Bits above GPIO29 are ignored.
+    public func toggle(mask: UInt32) throws(PicoKitError) {
+        #if PICOKIT_PICO_SDK
+        picokit_gpio_toggle_mask(mask)
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
     public func pinMode(_ pin: Int, _ mode: PinMode) throws(PicoKitError) {
         try setMode(PicoPin(pin), mode: mode)
     }

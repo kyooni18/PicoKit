@@ -135,6 +135,8 @@ struct PicoKitHostTests {
         sketch.pinMode(7, .output)
         sketch.digitalWrite(7, .high)
         require(sketch.digitalRead(7) == .high, "non-throwing Pico facade failed")
+        sketch.digitalToggle(7)
+        require(sketch.digitalRead(7) == .low, "digitalToggle did not flip injected GPIO state")
     }
 
     private static func testSerialFacade() {
@@ -160,6 +162,7 @@ struct PicoKitHostTests {
     private static func testCompileSurface() {
             let _: (Int, PinMode) -> Void = pinMode
             let _: (Int, PinState) -> Void = digitalWrite
+            let _: (Int) -> Void = digitalToggle
             let _: (UInt64) -> Void = sleep
             let _: PicoSerial = Serial
             let _: () -> UInt8? = Serial.read
@@ -169,6 +172,13 @@ struct PicoKitHostTests {
             let _: SPIMode = .mode3
             let _: SPIBitOrder = .leastSignificantBitFirst
             let _: SPIDataBits = .sixteen
+            let _: (PicoGPIO, UInt32) throws -> Void = { try $0.set(mask: $1) }
+            let _: (PicoGPIO, UInt32) throws -> Void = { try $0.clear(mask: $1) }
+            let _: (PicoGPIO, UInt32) throws -> Void = { try $0.toggle(mask: $1) }
+            let _: (PicoSPI, [UInt8]) throws -> Void = { try $0.writeDMA($1) }
+            let _: (PicoSPI, [UInt16]) throws -> Void = { try $0.writeDMA($1) }
+            let _: (PicoUART, [UInt8]) throws -> Void = { try $0.writeDMA($1) }
+            let _: (PicoPWM, UInt16) throws -> Void = { try $0.setCounterLevel($1) }
             let _: PinPull = .up
             let _: PinDriveStrength = .milliamps12
             let _: PinSlewRate = .fast

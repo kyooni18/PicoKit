@@ -6,6 +6,7 @@
 // compiling the PicoKit library, never application sources directly.
 void picokit_stdio_init(void);
 void picokit_stdio_write(const char *text);
+void picokit_stdio_write_line(const char *text);
 void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count);
 int32_t picokit_stdio_read(uint8_t *byte, uint64_t timeout_us);
 int32_t picokit_uart_init(uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx);
@@ -20,14 +21,18 @@ void picokit_gpio_set_direction(uint32_t pin, uint32_t output);
 void picokit_gpio_write(uint32_t pin, uint32_t value);
 uint32_t picokit_gpio_read(uint32_t pin);
 void picokit_gpio_toggle(uint32_t pin);
+void picokit_gpio_set_mask(uint32_t mask);
+void picokit_gpio_clear_mask(uint32_t mask);
+void picokit_gpio_toggle_mask(uint32_t mask);
 int32_t picokit_gpio_configure(uint32_t pin, uint32_t output, uint32_t initial_value,
                                uint32_t pull, uint32_t drive, uint32_t slew);
 
 uint64_t picokit_time_us(void);
 void picokit_sleep_us(uint64_t microseconds);
 
-int32_t picokit_pwm_init(uint32_t pin, uint32_t frequency_hz);
-void picokit_pwm_set_level(uint32_t pin, uint16_t level);
+int32_t picokit_pwm_init(uint32_t pin, uint32_t frequency_hz, uint32_t *slice, uint32_t *channel, uint32_t *wrap);
+void picokit_pwm_set_level(uint32_t slice, uint32_t channel, uint32_t wrap, uint16_t level);
+void picokit_pwm_set_counter_level(uint32_t slice, uint32_t channel, uint32_t wrap, uint16_t level);
 
 void picokit_adc_init(void);
 int32_t picokit_adc_read(uint32_t channel);
@@ -45,6 +50,10 @@ int32_t picokit_spi_init_config(uint32_t instance, uint32_t frequency_hz, uint32
 int32_t picokit_spi_write(uint32_t instance, const uint8_t *bytes, uint32_t count);
 int32_t picokit_spi_write_timeout(uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us);
 int32_t picokit_spi_write16(uint32_t instance, const uint16_t *words, uint32_t count);
+int32_t picokit_spi_write_dma(uint32_t instance, const uint8_t *bytes, uint32_t count);
+int32_t picokit_spi_write16_dma(uint32_t instance, const uint16_t *words, uint32_t count);
+
+int32_t picokit_uart_write_dma(uint32_t instance, const uint8_t *bytes, uint32_t count);
 
 int32_t picokit_interrupt_enable(uint32_t pin, uint32_t edge);
 uint32_t picokit_interrupt_take(uint32_t pin);

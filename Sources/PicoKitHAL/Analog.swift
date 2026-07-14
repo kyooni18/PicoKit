@@ -6,14 +6,26 @@ public enum PWMChannel: Sendable { case a, b }
 
 public final class PicoPWM {
     public let pin: PicoPin
+    /// The counter's maximum representable level for this configured frequency.
+    public let counterTop: UInt16
+    private let slice: UInt32
+    private let channel: UInt32
+    private let wrap: UInt32
 
     public init(pin: PicoPin, frequency: Frequency) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
-        let status = picokit_pwm_init(pin.rawValue, frequency.hertz)
+        var slice: UInt32 = 0
+        var channel: UInt32 = 0
+        var wrap: UInt32 = 0
+        let status = picokit_pwm_init(pin.rawValue, frequency.hertz, &slice, &channel, &wrap)
         guard status == 0 else {
             throw PicoKitError.ioFailure(operation: "PWM setup", status: status)
         }
         self.pin = pin
+        self.slice = slice
+        self.channel = channel
+        self.wrap = wrap
+        self.counterTop = UInt16(wrap)
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
         #endif
@@ -21,7 +33,19 @@ public final class PicoPWM {
 
     public func setDutyCycle(_ fraction: UInt16) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
-        picokit_pwm_set_level(pin.rawValue, fraction)
+        picokit_pwm_set_level(slice, channel, wrap, fraction)
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
+    /// Writes a value already scaled for this PWM counter. Values above
+    /// `counterTop` saturate to full duty. Use this in a tight loop when the
+    /// application can produce counter units directly and can skip the normal
+    /// UInt16 duty-to-counter division.
+    public func setCounterLevel(_ level: UInt16) throws(PicoKitError) {
+        #if PICOKIT_PICO_SDK
+        picokit_pwm_set_counter_level(slice, channel, wrap, level)
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
         #endif

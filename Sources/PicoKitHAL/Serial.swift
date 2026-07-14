@@ -68,68 +68,128 @@ public final class USBSerial {
 /// a typed-throwing requirement through an existential currently erases it to
 /// `any Error`, which Embedded Swift cannot represent.
 public final class PicoSerial: @unchecked Sendable {
-    private lazy var usb = try! USBSerial()
+    private var isInitialized = false
     private var pendingByte: UInt8?
 
     public init() {}
 
+    @inline(__always)
+    private func initializeIfNeeded() {
+        guard !isInitialized else { return }
+        picokit_stdio_init()
+        isInitialized = true
+    }
+
+    @inline(__always)
     public func write(_ text: String) {
-        try! usb.write(text)
+        initializeIfNeeded()
+        text.withCString { picokit_stdio_write($0) }
     }
 
+    @inline(__always)
     public func write(_ bytes: [UInt8]) {
-        try! usb.write(bytes)
+        guard !bytes.isEmpty else { return }
+        initializeIfNeeded()
+        bytes.withUnsafeBufferPointer {
+            picokit_stdio_write_bytes($0.baseAddress, UInt32($0.count))
+        }
     }
 
+    @inline(__always)
     public func print(_ text: String) { write(text) }
 
+    @inline(__always)
     public func println(_ text: String = "") {
-        write(text)
-        write("\n")
+        initializeIfNeeded()
+        text.withCString { picokit_stdio_write_line($0) }
     }
 
+    @inline(__always)
     public var available: Bool {
         if pendingByte != nil { return true }
-        pendingByte = try! usb.read()
+        initializeIfNeeded()
+        var byte: UInt8 = 0
+        let result = picokit_stdio_read(&byte, 0)
+        if result == 0 {
+            pendingByte = byte
+        } else if result != -2 {
+            preconditionFailure("USB serial read failed: \(result)")
+        }
         return pendingByte != nil
     }
 
+    @inline(__always)
     public func read() -> UInt8? {
         if let pendingByte {
             self.pendingByte = nil
             return pendingByte
         }
-        return try! usb.read()
+        initializeIfNeeded()
+        var byte: UInt8 = 0
+        let result = picokit_stdio_read(&byte, 0)
+        if result == 0 { return byte }
+        if result == -2 { return nil }
+        preconditionFailure("USB serial read failed: \(result)")
     }
 }
 
 /// Concrete firmware facade that preserves typed errors for Embedded Swift.
+@inline(__always)
+private func picoKitSketchPin(_ pin: Int) -> UInt32 {
+    guard pin >= 0 && pin < 30 else {
+        preconditionFailure("GPIO pin \(pin) is outside 0...29")
+    }
+    return UInt32(pin)
+}
+
+@inline(__always)
+private func picoKitSketchMilliseconds(_ milliseconds: UInt64) -> UInt64 {
+    let result = milliseconds.multipliedReportingOverflow(by: 1_000)
+    guard !result.overflow else {
+        preconditionFailure("Delay in milliseconds overflows microseconds: \(milliseconds)")
+    }
+    return result.partialValue
+}
+
 public final class Pico: @unchecked Sendable {
     public let gpio = PicoGPIO()
     public let serial = PicoSerial()
 
     public init() {}
 
+    @inline(__always)
     public func pinMode(_ pin: Int, _ mode: PinMode) {
-        try! gpio.setMode(PicoPin(pin), mode: mode)
+        let rawPin = picoKitSketchPin(pin)
+        picokit_gpio_init(rawPin)
+        picokit_gpio_set_direction(rawPin, mode == .output ? 1 : 0)
     }
 
+    @inline(__always)
     public func digitalWrite(_ pin: Int, _ state: PinState) {
-        try! gpio.write(PicoPin(pin), state: state)
+        picokit_gpio_write(picoKitSketchPin(pin), state == .high ? 1 : 0)
     }
 
+    @inline(__always)
     public func digitalRead(_ pin: Int) -> PinState {
-        try! gpio.read(PicoPin(pin))
+        picokit_gpio_read(picoKitSketchPin(pin)) == 0 ? .low : .high
     }
 
+    /// Atomically flips one GPIO output without a read-modify-write cycle.
+    @inline(__always)
+    public func digitalToggle(_ pin: Int) {
+        picokit_gpio_toggle(picoKitSketchPin(pin))
+    }
+
+    @inline(__always)
     public func sleep(_ milliseconds: UInt64) {
         guard milliseconds != 0 else { return }
-        try! Clock.sleep(for: Duration.milliseconds(milliseconds))
+        picokit_sleep_us(picoKitSketchMilliseconds(milliseconds))
     }
 
+    @inline(__always)
     public func sleepMicroseconds(_ microseconds: UInt64) {
         guard microseconds != 0 else { return }
-        try! Clock.sleep(for: Duration.microseconds(microseconds))
+        picokit_sleep_us(microseconds)
     }
 }
 
@@ -226,6 +286,12 @@ public final class Pico: @unchecked Sendable {
         picoKitUnchecked { try gpio.read(PicoPin(pin)) }
     }
 
+    public func digitalToggle(_ pin: Int) {
+        let validated = picoKitUnchecked { try PicoPin(pin) }
+        let state = picoKitUnchecked { try gpio.read(validated) }
+        picoKitUnchecked { try gpio.write(validated, state: state.toggled) }
+    }
+
     public func sleep(_ milliseconds: UInt64) {
         guard milliseconds != 0 else { return }
         picoKitUnchecked { try Clock.sleep(for: Duration.milliseconds(milliseconds)) }
@@ -242,8 +308,15 @@ public final class Pico: @unchecked Sendable {
 public let pico = Pico()
 public let Serial = pico.serial
 
+@inline(__always)
 public func pinMode(_ pin: Int, _ mode: PinMode) { pico.pinMode(pin, mode) }
+@inline(__always)
 public func digitalWrite(_ pin: Int, _ state: PinState) { pico.digitalWrite(pin, state) }
+@inline(__always)
 public func digitalRead(_ pin: Int) -> PinState { pico.digitalRead(pin) }
+@inline(__always)
+public func digitalToggle(_ pin: Int) { pico.digitalToggle(pin) }
+@inline(__always)
 public func sleep(_ milliseconds: UInt64) { pico.sleep(milliseconds) }
+@inline(__always)
 public func sleepMicroseconds(_ microseconds: UInt64) { pico.sleepMicroseconds(microseconds) }

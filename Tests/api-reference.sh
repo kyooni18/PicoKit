@@ -9,7 +9,7 @@ for symbol in \
     DigitalIO PicoGPIO BoardLED Clock USBSerial PicoSerial Serial Pico UARTInstance \
     PicoUART PWMChannel PicoPWM PicoBacklight ADCChannel PicoADC I2CInstance PicoI2C SPIInstance \
     SPIMode SPIBitOrder SPIDataBits PicoSPI PinPull PinDriveStrength PinSlewRate \
-    GPIOInterruptEdge PicoInterrupts PicoWatchdog pinMode digitalWrite \
+    GPIOInterruptEdge PicoInterrupts PicoWatchdog pinMode digitalWrite digitalToggle \
     digitalRead analogRead analogWrite delay delayMicroseconds millis micros sleep \
     sleepMicroseconds
 do

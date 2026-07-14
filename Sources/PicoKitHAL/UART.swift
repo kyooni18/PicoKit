@@ -34,6 +34,22 @@ public final class PicoUART {
         #endif
     }
 
+    /// Writes a prepared buffer through DMA and waits for the final byte to
+    /// enter the UART FIFO. It has no timeout; use `write(_:timeout:)` when a
+    /// bounded control-path operation is required.
+    public func writeDMA(_ bytes: [UInt8]) throws(PicoKitError) {
+        #if PICOKIT_PICO_SDK
+        let status = bytes.withUnsafeBufferPointer {
+            picokit_uart_write_dma(instance.rawValue, $0.baseAddress, UInt32($0.count))
+        }
+        guard status == Int32(bytes.count) else {
+            throw PicoKitError.ioFailure(operation: "UART DMA write", status: status)
+        }
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
     public func read(timeout: Duration) throws(PicoKitError) -> UInt8 {
         #if PICOKIT_PICO_SDK
         var byte: UInt8 = 0
@@ -48,4 +64,3 @@ public final class PicoUART {
         #endif
     }
 }
-

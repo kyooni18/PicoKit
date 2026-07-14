@@ -58,6 +58,9 @@ final class PicoGPIO: DigitalIO {
     func write(_ pin: PicoPin, state: PinState) throws
     func read(_ pin: PicoPin) throws -> PinState
     func toggle(_ pin: PicoPin) throws
+    func set(mask: UInt32) throws
+    func clear(mask: UInt32) throws
+    func toggle(mask: UInt32) throws
     func pinMode(_ pin: Int, _ mode: PinMode) throws
     func digitalWrite(_ pin: Int, _ state: PinState) throws
     func digitalRead(_ pin: Int) throws -> PinState
@@ -92,6 +95,7 @@ final class Pico {
     func pinMode(_ pin: Int, _ mode: PinMode)
     func digitalWrite(_ pin: Int, _ state: PinState)
     func digitalRead(_ pin: Int) -> PinState
+    func digitalToggle(_ pin: Int)
     func sleep(_ milliseconds: UInt64)
     func sleepMicroseconds(_ microseconds: UInt64)
 }
@@ -100,6 +104,7 @@ let pico: Pico
 func pinMode(_ pin: Int, _ mode: PinMode)
 func digitalWrite(_ pin: Int, _ state: PinState)
 func digitalRead(_ pin: Int) -> PinState
+func digitalToggle(_ pin: Int)
 func sleep(_ milliseconds: UInt64)
 func sleepMicroseconds(_ microseconds: UInt64)
 ```
@@ -146,6 +151,7 @@ final class PicoUART {
     init(_ instance: UARTInstance, baudRate: Frequency, tx: PicoPin, rx: PicoPin) throws
     let instance: UARTInstance
     func write(_ bytes: [UInt8], timeout: Duration) throws -> Int
+    func writeDMA(_ bytes: [UInt8]) throws
     func read(timeout: Duration) throws -> UInt8
 }
 
@@ -154,7 +160,9 @@ enum PWMChannel { case a, b }
 final class PicoPWM {
     init(pin: PicoPin, frequency: Frequency) throws
     let pin: PicoPin
+    let counterTop: UInt16
     func setDutyCycle(_ fraction: UInt16) throws
+    func setCounterLevel(_ level: UInt16) throws
     func analogWrite(_ duty: UInt8) throws
     func analogWrite(_ duty: UInt16) throws
 }
@@ -217,6 +225,8 @@ final class PicoSPI {
     func write(_ bytes: [UInt8]) throws
     func write(_ bytes: [UInt8], timeout: Duration) throws
     func write(_ words: [UInt16]) throws
+    func writeDMA(_ bytes: [UInt8]) throws
+    func writeDMA(_ words: [UInt16]) throws
     func transfer(_ bytes: [UInt8], timeout: Duration) throws -> [UInt8]
 }
 ```
@@ -227,7 +237,8 @@ addresses in `0x08...0x77`, rejects a negative count, and reports
 SPI supports write-only operation without MISO, modes 0 through 3, both bit
 orders, 8/16-bit formats, actual-baud reporting, and explicit chip-select.
 Blocking writes use the SDK bulk path without an RX allocation; timed writes
-report `partialTransfer`. Full-duplex deadline failures use `timedOut`.
+report `partialTransfer`. DMA writes synchronously claim and release their DMA
+channel(s) and retain no caller buffer. Full-duplex deadline failures use `timedOut`.
 
 ## Interrupts and watchdog
 

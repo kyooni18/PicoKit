@@ -4,6 +4,7 @@
 
 #include "hardware/adc.h"
 #include "hardware/clocks.h"
+#include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include "hardware/pwm.h"
@@ -27,6 +28,14 @@ int posix_memalign(void **pointer, size_t alignment, size_t size) {
 }
 
 static volatile uint32_t picokit_interrupt_events[30];
+static bool picokit_adc_initialized;
+static bool picokit_adc_gpio_initialized[4];
+static uint32_t picokit_adc_channel = UINT32_MAX;
+static bool picokit_adc_temperature_enabled;
+
+// PicoKit deliberately exposes GPIO0...GPIO29, including on RP2350 boards
+// with additional GPIO. Keep the fast mask API inside that public range.
+#define PICOKIT_GPIO_MASK 0x3fffffffu
 
 static void picokit_gpio_irq(uint gpio, uint32_t events) {
     if (gpio < 30) picokit_interrupt_events[gpio] |= events;
@@ -39,6 +48,10 @@ static uint64_t picokit_deadline_after(uint64_t timeout_us) {
 }
 void picokit_stdio_init(void) { stdio_init_all(); }
 void picokit_stdio_write(const char *text) { stdio_puts(text); }
+void picokit_stdio_write_line(const char *text) {
+    stdio_puts(text);
+    stdio_puts("\n");
+}
 void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count) {
     if (bytes && count) stdio_put_string((const char *)bytes, (int)count, false, false);
 }
@@ -81,6 +94,35 @@ int32_t picokit_uart_write(uint32_t instance, const uint8_t *bytes, uint32_t cou
     }
     return (int32_t)count;
 }
+static int32_t picokit_dma_write(
+    volatile void *destination,
+    const void *source,
+    uint32_t count,
+    enum dma_channel_transfer_size size,
+    uint dreq
+) {
+    if (!source && count) return -1;
+    if (count == 0) return 0;
+
+    int channel = dma_claim_unused_channel(false);
+    if (channel < 0) return -3;
+
+    dma_channel_config config = dma_channel_get_default_config((uint)channel);
+    channel_config_set_transfer_data_size(&config, size);
+    channel_config_set_read_increment(&config, true);
+    channel_config_set_write_increment(&config, false);
+    channel_config_set_dreq(&config, dreq);
+    dma_channel_configure((uint)channel, &config, destination, source, count, true);
+    dma_channel_wait_for_finish_blocking((uint)channel);
+    dma_channel_cleanup((uint)channel);
+    dma_channel_unclaim((uint)channel);
+    return (int32_t)count;
+}
+int32_t picokit_uart_write_dma(uint32_t instance, const uint8_t *bytes, uint32_t count) {
+    uart_inst_t *uart = picokit_uart(instance);
+    if (!uart) return -1;
+    return picokit_dma_write(&uart_get_hw(uart)->dr, bytes, count, DMA_SIZE_8, uart_get_dreq(uart, true));
+}
 int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us) {
     uart_inst_t *uart = picokit_uart(instance);
     if (!uart || !byte) return -1;
@@ -98,6 +140,9 @@ void picokit_gpio_set_direction(uint32_t pin, uint32_t output) { gpio_set_dir(pi
 void picokit_gpio_write(uint32_t pin, uint32_t value) { gpio_put(pin, value != 0); }
 uint32_t picokit_gpio_read(uint32_t pin) { return gpio_get(pin) ? 1u : 0u; }
 void picokit_gpio_toggle(uint32_t pin) { gpio_xor_mask(1u << pin); }
+void picokit_gpio_set_mask(uint32_t mask) { gpio_set_mask(mask & PICOKIT_GPIO_MASK); }
+void picokit_gpio_clear_mask(uint32_t mask) { gpio_clr_mask(mask & PICOKIT_GPIO_MASK); }
+void picokit_gpio_toggle_mask(uint32_t mask) { gpio_xor_mask(mask & PICOKIT_GPIO_MASK); }
 int32_t picokit_gpio_configure(uint32_t pin, uint32_t output, uint32_t initial_value,
                                uint32_t pull, uint32_t drive, uint32_t slew) {
     if (pin >= NUM_BANK0_GPIOS || pull > 2 || drive > 3 || slew > 1) return -1;
@@ -115,8 +160,8 @@ int32_t picokit_gpio_configure(uint32_t pin, uint32_t output, uint32_t initial_v
 uint64_t picokit_time_us(void) { return time_us_64(); }
 void picokit_sleep_us(uint64_t microseconds) { sleep_us(microseconds); }
 
-int32_t picokit_pwm_init(uint32_t pin, uint32_t frequency_hz) {
-    if (!frequency_hz) return -1;
+int32_t picokit_pwm_init(uint32_t pin, uint32_t frequency_hz, uint32_t *slice_out, uint32_t *channel_out, uint32_t *wrap_out) {
+    if (!frequency_hz || !slice_out || !channel_out || !wrap_out) return -1;
     gpio_set_function(pin, GPIO_FUNC_PWM);
     uint slice = pwm_gpio_to_slice_num(pin);
     uint32_t clock_hz = clock_get_hz(clk_sys);
@@ -130,21 +175,41 @@ int32_t picokit_pwm_init(uint32_t pin, uint32_t frequency_hz) {
     pwm_set_wrap(slice, (uint16_t)(wrap - 1));
     pwm_set_gpio_level(pin, 0);
     pwm_set_enabled(slice, true);
+    *slice_out = slice;
+    *channel_out = pwm_gpio_to_channel(pin);
+    *wrap_out = wrap - 1;
     return 0;
 }
-void picokit_pwm_set_level(uint32_t pin, uint16_t level) {
-    uint slice = pwm_gpio_to_slice_num(pin);
-    uint32_t wrap = pwm_hw->slice[slice].top;
+void picokit_pwm_set_level(uint32_t slice, uint32_t channel, uint32_t wrap, uint16_t level) {
     uint32_t scaled = ((uint32_t)level * (wrap + 1u)) / UINT16_MAX;
-    pwm_set_gpio_level(pin, scaled > wrap ? wrap : scaled);
+    pwm_set_chan_level(slice, (enum pwm_chan)channel, scaled > wrap ? wrap : scaled);
+}
+void picokit_pwm_set_counter_level(uint32_t slice, uint32_t channel, uint32_t wrap, uint16_t level) {
+    pwm_set_chan_level(slice, (enum pwm_chan)channel, level > wrap ? wrap : level);
 }
 
-void picokit_adc_init(void) { adc_init(); }
+void picokit_adc_init(void) {
+    if (!picokit_adc_initialized) {
+        adc_init();
+        picokit_adc_initialized = true;
+    }
+}
 int32_t picokit_adc_read(uint32_t channel) {
     if (channel > 4) return -1;
-    if (channel < 4) adc_gpio_init(26 + channel);
-    adc_set_temp_sensor_enabled(channel == 4);
-    adc_select_input(channel);
+    picokit_adc_init();
+    if (channel < 4 && !picokit_adc_gpio_initialized[channel]) {
+        adc_gpio_init(26 + channel);
+        picokit_adc_gpio_initialized[channel] = true;
+    }
+    bool temperature_enabled = channel == 4;
+    if (temperature_enabled != picokit_adc_temperature_enabled) {
+        adc_set_temp_sensor_enabled(temperature_enabled);
+        picokit_adc_temperature_enabled = temperature_enabled;
+    }
+    if (channel != picokit_adc_channel) {
+        adc_select_input(channel);
+        picokit_adc_channel = channel;
+    }
     return adc_read();
 }
 
@@ -223,6 +288,62 @@ int32_t picokit_spi_write16(uint32_t instance, const uint16_t *words, uint32_t c
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi || (!words && count)) return -1;
     return spi_write16_blocking(spi, words, count);
+}
+static int32_t picokit_spi_dma_write(
+    spi_inst_t *spi,
+    const void *bytes,
+    uint32_t count,
+    enum dma_channel_transfer_size size
+) {
+    if (!bytes && count) return -1;
+    if (count == 0) return 0;
+
+    int tx_channel = dma_claim_unused_channel(false);
+    if (tx_channel < 0) return -3;
+    int rx_channel = dma_claim_unused_channel(false);
+    if (rx_channel < 0) {
+        dma_channel_unclaim((uint)tx_channel);
+        return -3;
+    }
+
+    // SPI is full duplex even for write-only Swift APIs. Drain every received
+    // word through a paired DMA channel so the RX FIFO never stalls TX.
+    volatile uint16_t discard;
+    dma_channel_config rx_config = dma_channel_get_default_config((uint)rx_channel);
+    channel_config_set_transfer_data_size(&rx_config, size);
+    channel_config_set_read_increment(&rx_config, false);
+    channel_config_set_write_increment(&rx_config, false);
+    channel_config_set_dreq(&rx_config, spi_get_dreq(spi, false));
+    dma_channel_configure(
+        (uint)rx_channel, &rx_config, &discard, &spi_get_hw(spi)->dr, count, false
+    );
+
+    dma_channel_config tx_config = dma_channel_get_default_config((uint)tx_channel);
+    channel_config_set_transfer_data_size(&tx_config, size);
+    channel_config_set_read_increment(&tx_config, true);
+    channel_config_set_write_increment(&tx_config, false);
+    channel_config_set_dreq(&tx_config, spi_get_dreq(spi, true));
+    dma_channel_configure(
+        (uint)tx_channel, &tx_config, &spi_get_hw(spi)->dr, bytes, count, true
+    );
+
+    dma_channel_wait_for_finish_blocking((uint)tx_channel);
+    dma_channel_wait_for_finish_blocking((uint)rx_channel);
+    dma_channel_cleanup((uint)tx_channel);
+    dma_channel_cleanup((uint)rx_channel);
+    dma_channel_unclaim((uint)tx_channel);
+    dma_channel_unclaim((uint)rx_channel);
+    return (int32_t)count;
+}
+int32_t picokit_spi_write_dma(uint32_t instance, const uint8_t *bytes, uint32_t count) {
+    spi_inst_t *spi = picokit_spi(instance);
+    if (!spi) return -1;
+    return picokit_spi_dma_write(spi, bytes, count, DMA_SIZE_8);
+}
+int32_t picokit_spi_write16_dma(uint32_t instance, const uint16_t *words, uint32_t count) {
+    spi_inst_t *spi = picokit_spi(instance);
+    if (!spi) return -1;
+    return picokit_spi_dma_write(spi, words, count, DMA_SIZE_16);
 }
 int32_t picokit_spi_transfer(uint32_t instance, const uint8_t *tx, uint8_t *rx, uint32_t count, uint64_t timeout_us) {
     spi_inst_t *spi = picokit_spi(instance);

@@ -197,6 +197,38 @@ public final class PicoSPI {
         #endif
     }
 
+    /// Writes an 8-bit buffer through a DMA channel and waits for completion.
+    /// Use this for large, prepared output buffers; small control transfers are
+    /// usually better served by `write(_:)`.
+    public func writeDMA(_ bytes: [UInt8]) throws(PicoKitError) {
+        guard dataBits == .eight else { throw PicoKitError.unavailable("8-bit SPI DMA write while configured for 16-bit transfers") }
+        #if PICOKIT_PICO_SDK
+        let status = bytes.withUnsafeBufferPointer {
+            picokit_spi_write_dma(instance.rawValue, $0.baseAddress, UInt32($0.count))
+        }
+        guard status == Int32(bytes.count) else {
+            throw PicoKitError.ioFailure(operation: "SPI DMA write", status: status)
+        }
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
+    /// Writes a 16-bit buffer through a DMA channel and waits for completion.
+    public func writeDMA(_ words: [UInt16]) throws(PicoKitError) {
+        guard dataBits == .sixteen else { throw PicoKitError.unavailable("16-bit SPI DMA write while configured for 8-bit transfers") }
+        #if PICOKIT_PICO_SDK
+        let status = words.withUnsafeBufferPointer {
+            picokit_spi_write16_dma(instance.rawValue, $0.baseAddress, UInt32($0.count))
+        }
+        guard status == Int32(words.count) else {
+            throw PicoKitError.ioFailure(operation: "SPI DMA write", status: status)
+        }
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
     public func transfer(_ bytes: [UInt8], timeout: Duration) throws(PicoKitError) -> [UInt8] {
         guard dataBits == .eight else { throw PicoKitError.unavailable("8-bit SPI transfer while configured for 16-bit transfers") }
         #if PICOKIT_PICO_SDK

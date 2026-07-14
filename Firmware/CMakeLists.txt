@@ -63,7 +63,7 @@ endif()
 set(PICOKIT_BRIDGE_DIR "${PICOKIT_ROOT}/Firmware")
 add_library(PicoKitSDKBridge STATIC "${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c")
 target_include_directories(PicoKitSDKBridge PUBLIC "${PICOKIT_BRIDGE_DIR}")
-target_link_libraries(PicoKitSDKBridge PUBLIC pico_stdlib pico_status_led hardware_adc hardware_i2c hardware_pwm hardware_spi hardware_watchdog)
+target_link_libraries(PicoKitSDKBridge PUBLIC pico_stdlib pico_status_led hardware_adc hardware_dma hardware_i2c hardware_pwm hardware_spi hardware_watchdog)
 
 # Layers 2, 1, and public facade. This is a real Swift library; firmware
 # sources import PicoKit and link it instead of calling a project-local shim.

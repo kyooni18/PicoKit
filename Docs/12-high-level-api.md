@@ -35,6 +35,9 @@ You do not need to create a controller just to turn a pin on:
 pinMode(15, .output)
 digitalWrite(15, .high)
 
+// One atomic hardware XOR on firmware builds; useful for tight blink loops.
+digitalToggle(15)
+
 let state = digitalRead(16)
 if state.isHigh {
     Serial.println("GPIO16 is high")
@@ -148,6 +151,17 @@ pinMode(15, .output)
 digitalWrite(15, .high)
 sleep(100)
 ```
+
+On firmware builds, these sketch calls validate the integer pin once and then
+call the SDK bridge directly. They avoid constructing low-level pin and
+duration values on every GPIO or delay call, while retaining the same fail-fast
+behavior for invalid pins and overflowing millisecond delays. The injected
+`Pico(gpio:)` facade remains available to host tests.
+
+`digitalToggle` maps to the RP-series atomic GPIO XOR operation in firmware.
+That avoids a `digitalRead`/`digitalWrite` round trip and is the preferred
+high-level operation when a loop only needs to flip an output. An injected host
+GPIO fake uses a read/write fallback so it remains easy to test.
 
 Use low-level APIs when the application must handle invalid input or hardware
 failures itself. It is more ceremony, but it gives the caller a real error path:
