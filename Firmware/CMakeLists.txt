@@ -254,6 +254,7 @@ endif()
 
 set_property(GLOBAL PROPERTY picokit_visited_targets "")
 set_property(GLOBAL PROPERTY picokit_compile_definitions "")
+set_property(GLOBAL PROPERTY picokit_include_directories "")
 function(picokit_collect_definitions target)
     get_property(visited GLOBAL PROPERTY picokit_visited_targets)
     if(${target} MATCHES "\\$<" OR ${target} MATCHES "::@" OR ${target} IN_LIST visited)
@@ -266,6 +267,21 @@ function(picokit_collect_definitions target)
         get_property(collected GLOBAL PROPERTY picokit_compile_definitions)
         list(APPEND collected ${definitions})
         set_property(GLOBAL PROPERTY picokit_compile_definitions "${collected}")
+    endif()
+    # Application-owned C/C++ adapters may include Pico SDK headers directly.
+    # Keep this surface separate from the embedded Swift targets: the SDK's
+    # C-only flags and definitions must not leak into Swift compilation.
+    get_target_property(include_directories ${target} INTERFACE_INCLUDE_DIRECTORIES)
+    if(include_directories)
+        get_property(collected_includes GLOBAL PROPERTY picokit_include_directories)
+        list(APPEND collected_includes ${include_directories})
+        set_property(GLOBAL PROPERTY picokit_include_directories "${collected_includes}")
+    endif()
+    get_target_property(system_include_directories ${target} INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
+    if(system_include_directories)
+        get_property(collected_includes GLOBAL PROPERTY picokit_include_directories)
+        list(APPEND collected_includes ${system_include_directories})
+        set_property(GLOBAL PROPERTY picokit_include_directories "${collected_includes}")
     endif()
     get_target_property(libraries ${target} INTERFACE_LINK_LIBRARIES)
     if(libraries)
@@ -280,8 +296,11 @@ foreach(library ${PICOKIT_SDK_LIBRARIES})
 endforeach()
 get_property(COMPILE_DEFINITIONS GLOBAL PROPERTY picokit_compile_definitions)
 list(REMOVE_DUPLICATES COMPILE_DEFINITIONS)
+set(PICOKIT_APP_SDK_COMPILE_DEFINITIONS ${COMPILE_DEFINITIONS})
 list(PREPEND COMPILE_DEFINITIONS "")
 string(REPLACE ";" " -Xcc -D" COMPILE_DEFINITIONS "${COMPILE_DEFINITIONS}")
+get_property(PICOKIT_APP_SDK_INCLUDE_DIRECTORIES GLOBAL PROPERTY picokit_include_directories)
+list(REMOVE_DUPLICATES PICOKIT_APP_SDK_INCLUDE_DIRECTORIES)
 
 set(IMPLICIT_INCLUDES)
 foreach(directory ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES} ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
@@ -304,6 +323,24 @@ target_compile_options(PicoKit PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
 
 add_executable(${PICOKIT_PRODUCT} ${PICOKIT_SOURCES})
 set_target_properties(${PICOKIT_PRODUCT} PROPERTIES LINKER_LANGUAGE CXX)
+# Expose Pico SDK headers and configuration only to application C/C++ sources
+# (Firmware/Interop and user-added adapters). PicoKitSDKBridge remains the
+# Swift boundary, while C adapters can use normal Pico SDK headers without
+# project-specific CMake boilerplate.
+foreach(include_directory ${PICOKIT_APP_SDK_INCLUDE_DIRECTORIES})
+    if(include_directory MATCHES "\\$<")
+        continue()
+    endif()
+    target_include_directories(${PICOKIT_PRODUCT} PRIVATE
+        "$<$<COMPILE_LANGUAGE:C,CXX>:${include_directory}>")
+endforeach()
+foreach(definition ${PICOKIT_APP_SDK_COMPILE_DEFINITIONS})
+    if(definition MATCHES "\\$<")
+        continue()
+    endif()
+    target_compile_definitions(${PICOKIT_PRODUCT} PRIVATE
+        "$<$<COMPILE_LANGUAGE:C,CXX>:${definition}>")
+endforeach()
 # Embedded Swift's runtime archives carry fixed-width enum ABI metadata while
 # the GNU linker defaults to variable-size enums. The C and Swift sides already
 # use the required -fshort-enums ABI; suppress only these known, safe linker
