@@ -214,8 +214,6 @@ if(PICOKIT_ENABLE_USB)
         PICO_STDIO_USB_STDOUT_TIMEOUT_US=${PICOKIT_USB_STDOUT_TIMEOUT_US}
         PICO_STDIO_USB_CONNECT_WAIT_TIMEOUT_MS=${PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS}
         PICO_STDIO_USB_POST_CONNECT_WAIT_DELAY_MS=${PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS}
-        PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
-        PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
     )
     if(PICOKIT_USB_CONNECTION_WITHOUT_DTR)
         message(STATUS "PicoKit USB CDC connection check: DTR-independent")
@@ -241,7 +239,8 @@ set_target_properties(PicoKit PROPERTIES LINKER_LANGUAGE CXX Swift_MODULE_NAME P
 # dependencies still need to be listed on the final firmware target, but
 # exposing the bridge publicly makes CMake forward every valued Pico SDK
 # definition into the application's Swift compile command.
-target_link_libraries(PicoKit PRIVATE PicoKitSDKBridge)
+# PicoKit's Swift objects reference the bridge ABI, but static libraries do
+# not need that dependency linked until the final firmware executable.
 
 # Pico SDK interface targets contain C-only options. Keep them on C targets;
 # Swift receives only the architecture, module, and bridge header it needs.
@@ -311,13 +310,6 @@ set_target_properties(${PICOKIT_PRODUCT} PROPERTIES LINKER_LANGUAGE CXX)
 # diagnostics. Embedded firmware never needs an executable process stack.
 target_link_options(${PICOKIT_PRODUCT} PRIVATE
     "-Wl,-z,noexecstack"
-    # The SDK runtime initializers are registered through linker sections, so
-    # they have no ordinary undefined reference that would pull their object
-    # files out of PicoKitSDKBridge's static archive. Force one symbol from
-    # each registration object into the final image; this restores the SDK's
-    # clock/reset/vector initialization before USB CDC starts.
-    "LINKER:-u,runtime_init_spin_locks_reset"
-    "LINKER:-u,runtime_init_clocks"
 )
 # The ARM GNU linker emits enum-size ABI diagnostics for Embedded Swift's
 # runtime archives and supports this suppression. The RISC-V linker shipped
@@ -325,14 +317,6 @@ target_link_options(${PICOKIT_PRODUCT} PRIVATE
 # not produce the same diagnostic, so keep it ARM-only.
 if(NOT PICO_PLATFORM STREQUAL "rp2350-riscv")
     target_link_options(${PICOKIT_PRODUCT} PRIVATE "-Wl,--no-enum-size-warning")
-endif()
-if(PICOKIT_ENABLE_USB)
-    target_compile_options(${PICOKIT_PRODUCT} PRIVATE
-        "$<$<COMPILE_LANGUAGE:C>:-DPICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-DPICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1>"
-        "$<$<COMPILE_LANGUAGE:C>:-DPICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-DPICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1>"
-    )
 endif()
 target_compile_options(${PICOKIT_PRODUCT} PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
     -target ${SWIFT_TARGET}
@@ -342,7 +326,18 @@ target_compile_options(${PICOKIT_PRODUCT} PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:S
     -Xcc -fmodule-map-file=${PICOKIT_BRIDGE_MODULE_MAP}
     -Xcc -I${PICOKIT_BRIDGE_DIR}
 >")
-target_link_libraries(${PICOKIT_PRODUCT} PRIVATE PicoKit PicoKitSDKBridge)
+# The Pico SDK registers hardware/runtime initializers exclusively through
+# linker sections. Because the SDK implementation is contained in this static
+# bridge archive, ordinary archive extraction would discard initializer-only
+# objects (including RP2350 boot-lock setup) and leave USB CDC nonfunctional.
+# Retain the complete bridge archive so its startup graph matches a normal
+# Pico SDK executable target.
+target_link_libraries(${PICOKIT_PRODUCT} PRIVATE
+    PicoKit
+    "-Wl,--whole-archive"
+    PicoKitSDKBridge
+    "-Wl,--no-whole-archive"
+)
 
 # Application-owned interoperability stays outside PicoKit's bridge. C and
 # C++ adapters in Firmware/Interop are compiled into the firmware target, while

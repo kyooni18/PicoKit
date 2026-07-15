@@ -74,8 +74,12 @@ grep -Fq '#include "pico/stdio_usb.h"' "$bridge"
 grep -Fq 'uint32_t picokit_compiled_chip(void)' "$bridge"
 grep -Fq 'uint32_t picokit_compiled_board(void)' "$bridge"
 grep -Fq 'PICOKIT_COMPILED_BOARD' "$bridge"
-grep -Fq 'PICO_RUNTIME_INIT_FUNC_RUNTIME(picokit_runtime_init_stdio, "13000")' "$bridge"
-grep -Fq 'after the SDK' "$bridge"
+if grep -Fq 'PICO_RUNTIME_INIT_FUNC_RUNTIME(picokit_runtime_init_stdio' "$bridge"; then
+    echo "USB stdio must not run from the pre-main runtime initializer" >&2
+    exit 1
+fi
+grep -Fq '__attribute__((constructor(101)))' "$bridge"
+grep -Fq 'picokit_initialize_usb_stdio' "$bridge"
 grep -Fq 'UART chip does not match compiled Pico chip' "$root/Sources/PicoKitHAL/UART.swift"
 grep -Fq 'GPIO chip does not match compiled Pico chip' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'public convenience init() throws(PicoKitError)' "$root/Sources/PicoKitHAL/GPIO.swift"

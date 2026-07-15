@@ -25,13 +25,13 @@ grep -Fq 'PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS must fit UInt32' "$root/Firmware/C
 grep -Fq 'PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS' "$root/Firmware/CMakeLists.txt"
 grep -Fq 'PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS must fit UInt32' "$root/Firmware/CMakeLists.txt"
 grep -Fq 'PICOKIT_USB_CONNECTION_WITHOUT_DTR' "$root/Firmware/CMakeLists.txt"
+grep -Fq 'picokit_initialize_usb_stdio' "$script"
 test -x "$root/Tests/integration/direct-cmake.sh"
 test -x "$root/Tests/integration/compiler-discovery.sh"
 test -x "$cmake_options_script"
 grep -Fq 'run: sh Tests/integration/direct-cmake.sh' "$workflow"
 grep -Fq 'run: sh Tests/integration/compiler-discovery.sh' "$workflow"
 grep -Fq 'run: sh Tests/integration/cmake-options.sh' "$workflow"
-grep -Fq 'picokit_runtime_init_stdio' "$script"
 if grep -Fq 'echo "$info" | grep' "$script"; then
     echo "generated-project hardware identity check uses an unsafe pipeline" >&2
     exit 1
@@ -40,6 +40,8 @@ grep -Fq 'stdio_usb_init' "$script"
 grep -Fq '__pre_init_runtime_init_early_resets' "$script"
 grep -Fq '__pre_init_runtime_init_clocks' "$script"
 grep -Fq '__pre_init_runtime_init_post_clock_resets' "$script"
+grep -Fq '__pre_init_runtime_init_boot_locks_reset' "$script"
+grep -Fq '__pre_init_runtime_init_bootrom_locking_enable' "$script"
 grep -Fq '__pre_init_runtime_init_mutex' "$script"
 grep -Fq '__pre_init_runtime_init_install_ram_vector_table' "$script"
 grep -Fq '__pre_init_runtime_init_default_alarm_pool' "$script"

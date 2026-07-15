@@ -14,7 +14,6 @@
 #include "hardware/watchdog.h"
 #include "pico/error.h"
 #include "pico/critical_section.h"
-#include "pico/runtime.h"
 #include "pico/stdio.h"
 #if PICOKIT_ENABLE_USB
 #include "pico/stdio_usb.h"
@@ -201,19 +200,14 @@ void picokit_stdio_init(void) {
     }
 }
 
-// USB stdio must be initialized before the Swift application enters main.
-// `pico_enable_stdio_usb` only links the backend; without this hook sketches
-// that do not otherwise use Serial never enumerate after `picotool load -f`
-// reboots them into the newly flashed application.
 #if PICOKIT_ENABLE_USB
-// Run after the SDK's standard runtime and IRQ-priority initializers. The USB
-// stdio backend installs a background task/IRQ; registering it earlier than
-// the SDK's per-core IRQ setup can leave TinyUSB answering the device
-// descriptor while stalling SET_CONFIGURATION on RP2350.
-static void picokit_runtime_init_stdio(void) {
+// C constructors run after the Pico SDK's complete preinit array, including
+// the per-core IRQ and RP2350 boot-lock initializers. Starting USB here keeps
+// CDC/reset available even for Swift applications that never use Serial.
+__attribute__((constructor(101)))
+static void picokit_initialize_usb_stdio(void) {
     picokit_stdio_init();
 }
-PICO_RUNTIME_INIT_FUNC_RUNTIME(picokit_runtime_init_stdio, "13000");
 #endif
 
 uint32_t picokit_stdio_connected(void) {

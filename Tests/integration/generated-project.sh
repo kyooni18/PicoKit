@@ -57,7 +57,8 @@ test -s "$elf"
 if command -v arm-none-eabi-nm >/dev/null 2>&1; then
     symbols="$tmp/SerialEcho.symbols"
     arm-none-eabi-nm -an "$elf" > "$symbols"
-    grep -Eq '[[:space:]]picokit_runtime_init_stdio$' "$symbols"
+    grep -Eq '[[:space:]]picokit_stdio_init$' "$symbols"
+    grep -Eq '[[:space:]]picokit_initialize_usb_stdio$' "$symbols"
     grep -Eq '[[:space:]]stdio_usb_init$' "$symbols"
     # TinyUSB's current tud_init() is an always-inline wrapper around the
     # exported root-hub initializer; assert the symbol that actually links.
@@ -65,6 +66,8 @@ if command -v arm-none-eabi-nm >/dev/null 2>&1; then
     grep -Eq '[[:space:]]__pre_init_runtime_init_early_resets$' "$symbols"
     grep -Eq '[[:space:]]__pre_init_runtime_init_clocks$' "$symbols"
     grep -Eq '[[:space:]]__pre_init_runtime_init_post_clock_resets$' "$symbols"
+    grep -Eq '[[:space:]]__pre_init_runtime_init_boot_locks_reset$' "$symbols"
+    grep -Eq '[[:space:]]__pre_init_runtime_init_bootrom_locking_enable$' "$symbols"
     grep -Eq '[[:space:]]__pre_init_runtime_init_spin_locks_reset$' "$symbols"
     grep -Eq '[[:space:]]__pre_init_runtime_init_mutex$' "$symbols"
     grep -Eq '[[:space:]]__pre_init_runtime_init_install_ram_vector_table$' "$symbols"
