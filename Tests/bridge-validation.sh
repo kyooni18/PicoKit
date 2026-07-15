@@ -11,6 +11,8 @@ rp2350DMA="$root/Vendor/pico-sdk/src/rp2350/hardware_regs/include/hardware/regs/
 test -s "$rp2350DMA"
 grep -Fq 'set(PICOKIT_COMPILED_BOARD 255)' "$cmakeFile"
 grep -Fq 'PICO_BOARD STREQUAL "pico2_w"' "$cmakeFile"
+test "$(awk '/pico_sdk_init\(\)/ { print NR; exit }' "$cmakeFile")" -lt \
+    "$(awk '/set\(PICOKIT_COMPILED_BOARD 255\)/ { print NR; exit }' "$cmakeFile")"
 grep -Fq 'case .pico2W: 3' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq '#define DMA_CH0_TRANS_COUNT_COUNT_BITS   _u(0x0fffffff)' "$rp2350DMA"
 
@@ -18,6 +20,9 @@ grep -Fq '#define DMA_CH0_TRANS_COUNT_COUNT_BITS   _u(0x0fffffff)' "$rp2350DMA"
 # not wrap divider * frequency_hz before the firmware validates the period.
 grep -Fq 'uint64_t denominator = (uint64_t)divider * frequency_hz;' "$bridge"
 grep -Fq 'uint32_t wrap = (uint32_t)((uint64_t)clock_hz / denominator);' "$bridge"
+grep -Fq 'A rejected configuration must leave the GPIO usable' "$bridge"
+test "$(awk '/uint32_t wrap = \(uint32_t\)\(\(uint64_t\)clock_hz \/ denominator\)/ { print NR; exit }' "$bridge")" -lt \
+    "$(awk '/gpio_set_function\(pin, GPIO_FUNC_PWM\)/ { print NR; exit }' "$bridge")"
 grep -Fq 'uint32_t chunk = count > (uint32_t)INT_MAX ? (uint32_t)INT_MAX : count;' "$bridge"
 grep -Fq 'count -= chunk;' "$bridge"
 grep -Fq 'alignment < sizeof(void *)' "$bridge"
@@ -31,6 +36,22 @@ grep -Fq 'uint32_t actual_frequency = i2c_init(i2c, frequency_hz);' "$bridge"
 grep -Fq '(uint16_t)(scaled > wrap ? wrap : scaled)' "$bridge"
 grep -Fq '(uint16_t)(level > wrap ? wrap : level)' "$bridge"
 grep -Fq 'slice >= NUM_PWM_SLICES' "$bridge"
+if ! awk '
+/static int32_t picokit_pwm_init_impl/ { inside = 1 }
+inside && /if \(wrap < 2 \|\| wrap > 65536\)/ { validated = 1 }
+inside && /gpio_set_function\(pin, GPIO_FUNC_PWM\)/ {
+    if (!validated) exit 1
+    changed = 1
+}
+inside && /^}/ {
+    if (changed) exit 0
+    inside = 0
+}
+END { if (!changed) exit 1 }
+' "$bridge"; then
+    echo "PWM setup mutates the pin before frequency validation" >&2
+    exit 1
+fi
 grep -Fq 'nostop > 1' "$bridge"
 grep -Fq 'nostop != 0' "$bridge"
 grep -Fq 'address < 0x08 || address > 0x77' "$bridge"
@@ -48,15 +69,20 @@ grep -Fq 'UART_FUNCSEL_NUM(uart, tx)' "$bridge"
 grep -Fq 'UART_FUNCSEL_NUM(uart, rx)' "$bridge"
 grep -Fq 'picokit_uart_init_with_actual_baud_rate' "$bridge"
 grep -Fq 'uint32_t actual_baud_rate = uart_init(uart, baud_rate);' "$bridge"
+grep -Fq '#if PICOKIT_ENABLE_USB' "$bridge"
+grep -Fq '#include "pico/stdio_usb.h"' "$bridge"
 grep -Fq 'uint32_t picokit_compiled_chip(void)' "$bridge"
 grep -Fq 'uint32_t picokit_compiled_board(void)' "$bridge"
 grep -Fq 'PICOKIT_COMPILED_BOARD' "$bridge"
+grep -Fq 'PICO_RUNTIME_INIT_FUNC_RUNTIME(picokit_runtime_init_stdio, "13000")' "$bridge"
+grep -Fq 'after the SDK' "$bridge"
 grep -Fq 'UART chip does not match compiled Pico chip' "$root/Sources/PicoKitHAL/UART.swift"
 grep -Fq 'GPIO chip does not match compiled Pico chip' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'public convenience init() throws(PicoKitError)' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'unknown compiled Pico board' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'public static var compiled: PicoGPIO' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'static var compiled: Self' "$root/Sources/PicoKitHAL/GPIO.swift"
+grep -Fq 'static var compiled: Self?' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'public init(chip: PicoChip = .compiled)' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'chip: PicoChip = .compiled' "$root/Sources/PicoKitHAL/UART.swift"
 grep -Fq 'case .ownershipConflict(let reason): reason' "$root/Sources/PicoKitCore/PicoKitCore.swift"
@@ -110,6 +136,40 @@ grep -Fq 'if (pin >= PICOKIT_GPIO_COUNT || edge < 1 || edge > 3)' "$bridge"
 grep -Fq 'if (pin >= PICOKIT_GPIO_COUNT) return 0;' "$bridge"
 grep -Fq 'static bool picokit_valid_gpio(uint32_t pin)' "$bridge"
 grep -Fq 'static bool picokit_valid_dma_count(uint32_t count)' "$bridge"
+grep -Fq 'static bool picokit_valid_i2c_frequency(uint32_t frequency_hz)' "$bridge"
+grep -Fq 'static bool picokit_valid_spi_frequency(uint32_t frequency_hz)' "$bridge"
+grep -Fq 'static bool picokit_valid_watchdog_timeout_ms(uint32_t timeout_ms)' "$bridge"
+grep -Fq 'WATCHDOG_LOAD_BITS / 2000u' "$bridge"
+grep -Fq 'WATCHDOG_LOAD_BITS / 1000u' "$bridge"
+grep -Fq 'pause_on_debug > 1' "$bridge"
+awk '
+    /int32_t picokit_watchdog_enable/ { inside = 1 }
+    inside && /if \(!picokit_valid_watchdog_timeout_ms/ { guard_line = NR }
+    inside && /watchdog_enable\(timeout_ms/ {
+        if (!guard_line || guard_line >= NR) exit 1
+        exit 0
+    }
+    inside && /^}/ { inside = 0 }
+' "$bridge"
+grep -Fq 'invalid_params/assert' "$bridge"
+awk '
+    /static int32_t picokit_i2c_init_impl/ { inside = 1 }
+    inside && /picokit_valid_i2c_frequency\(frequency_hz\)/ { guard_line = NR }
+    inside && /uint32_t actual_frequency = i2c_init\(/ {
+        if (!guard_line || guard_line >= NR) exit 1
+        exit 0
+    }
+    inside && /^}/ { inside = 0 }
+' "$bridge"
+awk '
+    /int32_t picokit_spi_init_config/ { inside = 1 }
+    inside && /picokit_valid_spi_frequency\(frequency_hz\)/ { guard_line = NR }
+    inside && /uint32_t actual = spi_init\(/ {
+        if (!guard_line || guard_line >= NR) exit 1
+        exit 0
+    }
+    inside && /^}/ { inside = 0 }
+' "$bridge"
 grep -Fq '#if PICO_RP2040' "$bridge"
 grep -Fq 'return count <= 0x0fffffffu;' "$bridge"
 grep -Fq 'dma_encode_transfer_count((uint)count)' "$bridge"
@@ -125,6 +185,9 @@ grep -Fq 'static critical_section_t picokit_adc_critical_section;' "$bridge"
 grep -Fq 'critical_section_enter_blocking(&picokit_adc_critical_section);' "$bridge"
 grep -Fq 'critical_section_exit(&picokit_adc_critical_section);' "$bridge"
 grep -Fq 'if (channel >= NUM_ADC_CHANNELS) return -1;' "$bridge"
+grep -Fq 'guard count != 0 else { return 0 }' "$root/Sources/PicoKitHAL/Buses.swift"
+grep -Fq 'guard transferCount != 0 else { return [] }' "$root/Sources/PicoKitHAL/Buses.swift"
+grep -Fq 'if (count == 0) return 0;' "$bridge"
 grep -Fq 'adc_gpio_init(ADC_BASE_PIN + channel);' "$bridge"
 grep -Fq 'channel == ADC_TEMPERATURE_CHANNEL_NUM' "$bridge"
 grep -Fq 'static uint32_t picokit_adc_initialization_state;' "$bridge"

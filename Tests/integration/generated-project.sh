@@ -112,16 +112,20 @@ while test "$i" -lt 40; do
     i=$((i + 1))
 done
 if test "$#" -ne 1; then
-    if test "$had_serial" -eq 0; then
-        if test "${PICO_HARDWARE_REQUIRE_CDC:-0}" = 1; then
-            echo "Hardware CDC failed: device did not enumerate after flash" >&2
-            exit 1
-        fi
-        echo "Hardware flash passed; echo SKIPPED (CDC device did not enumerate)"
+    if test "$had_serial" -eq 1; then
+        echo "Hardware echo failed: serial device did not return" >&2
+        exit 1
+    fi
+    if test "${PICO_HARDWARE_REQUIRE_CDC:-0}" = 1; then
+        echo "Hardware CDC failed: device did not enumerate after flash" >&2
+        exit 1
+    fi
+    if picotool info >/dev/null 2>&1; then
+        echo "Hardware flash passed; echo SKIPPED (board remains USB-controlled in BOOTSEL)"
         echo "Temporary PicoKit project integration passed"
         exit 0
     fi
-    echo "Hardware echo failed: serial device did not return" >&2
+    echo "Hardware flash failed: board is neither CDC serial nor USB-controlled BOOTSEL" >&2
     exit 1
 fi
 

@@ -38,6 +38,12 @@ The initializer creates a normal standalone Swift package. It writes the
 launcher needed for a PicoKit project, so the PicoKit checkout itself can stay
 focused on the reusable library.
 
+PicoKit pins the exact Pico SDK commit it needs, but does not embed that SDK in
+each project. `swiftpico build` downloads it once into the shared SwiftPico
+cache and reuses it for every project that needs that revision. Set
+`SWIFTPICO_CACHE_DIR` to put that cache on a shared disk or a CI cache. Direct
+CMake builds can instead pass `-DPICO_SDK_PATH=/path/to/pico-sdk`.
+
 ## Requirements
 
 Install the CLI and check the host toolchain first:
@@ -187,11 +193,26 @@ To verify the documented no-USB firmware mode on every supported board alias, ru
 
 ```sh
 sh Tests/integration/usb-disabled.sh
+# Verify the documented direct CMake path discovers Embedded Swift itself.
+sh Tests/integration/direct-cmake.sh
+# Verify compiler environment overrides and invalid override rejection.
+sh Tests/integration/compiler-discovery.sh
+# Verify USB CMake option bounds without compiling firmware.
+sh Tests/integration/cmake-options.sh
 ```
+
+`PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS` defaults to `0`. Use a positive value to
+wait a bounded number of milliseconds for CDC, or `-1` to wait indefinitely as
+supported by the Pico SDK.
+`PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS` defaults to `50` ms and can be set to
+`0` or a larger value to tune terminal settling after CDC enumeration.
+Set `PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON` when the host does not assert DTR;
+the default remains `OFF`.
 
 Set `PICO_HARDWARE_TEST=1` to additionally flash one detected Pico and verify
 an exact binary USB CDC echo. A board in BOOTSEL mode is flashed even without a
-serial node; the echo portion is skipped only if CDC does not return. Select the connected family with
+serial node; after flashing, echo is skipped only when the board remains
+USB-controlled in BOOTSEL. Select the connected family with
 `PICO_TEST_BOARD=pico` (default), `pico_w`, `pico2`, or `pico2_w`; the script
 checks BOOTSEL chip identity before flashing. If no single device is present,
 that optional section reports `SKIPPED`. SwiftPico also owns CLI and multi-board tests:

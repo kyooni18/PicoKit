@@ -57,9 +57,12 @@ struct App {
 
 The repository includes the same pattern as a dedicated USB serial smoke test
 at `Sources/Serial/main.swift`. Build it by overriding the application source
-and product, then monitor the board at 115200 baud:
+and product, then monitor the board at 115200 baud. On macOS, keep the nested
+Pico SDK host tools on the native architecture:
 
 ```sh
+export PATH="/opt/homebrew/bin:$PATH"
+export CMAKE_OSX_ARCHITECTURES="$(uname -m)"
 cmake -S Firmware -B Firmware/build-serial -G Ninja \
   -DPICO_BOARD=pico2_w \
   -DPICOKIT_PRODUCT=Serial \

@@ -23,6 +23,7 @@ public enum PicoBoard {
     case picoW
     case pico2
     case pico2W
+    static var compiled: PicoBoard? { get }
 }
 ```
 
@@ -38,6 +39,10 @@ board.onboardLED
 Use `init?(configurationName:)` when a board name comes from configuration or a
 command line. It accepts the canonical spellings and the historical hyphenated
 aliases.
+
+`PicoBoard.compiled` reports the exact board selected by firmware's
+`PICO_BOARD`. It is `nil` for a custom board that PicoKit does not recognize;
+host builds use `.pico` as their validation default.
 
 ### `PicoPin`
 

@@ -13,6 +13,17 @@ public final class USBSerial {
         #endif
     }
 
+    /// Reports whether the USB CDC host has opened the firmware's serial
+    /// interface. This is a snapshot; the host may disconnect immediately
+    /// after the value is read.
+    public var isConnected: Bool {
+        #if PICOKIT_PICO_SDK
+        return picokit_stdio_connected() != 0
+        #else
+        return false
+        #endif
+    }
+
     public func write(_ text: String) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
         text.withCString { picokit_stdio_write($0) }
@@ -75,6 +86,14 @@ public final class PicoSerial: @unchecked Sendable {
     private var pendingByte: UInt8?
 
     public init() {}
+
+    /// Reports whether the USB CDC host has opened the serial interface.
+    /// Treat this as a snapshot and continue to handle disconnected writes.
+    @inline(__always)
+    public var connected: Bool {
+        initializeIfNeeded()
+        return picokit_stdio_connected() != 0
+    }
 
     @inline(__always)
     private func initializeIfNeeded() {
@@ -205,6 +224,7 @@ public final class Pico: @unchecked Sendable {
 #else
 
 protocol PicoSerialBackend: AnyObject {
+    var isConnected: Bool { get }
     func write(_ text: String) throws(PicoKitError)
     func write(_ bytes: [UInt8]) throws(PicoKitError)
     func read() throws(PicoKitError) -> UInt8?
@@ -212,6 +232,11 @@ protocol PicoSerialBackend: AnyObject {
 
 private final class SDKSerialBackend: PicoSerialBackend {
     private lazy var usb = picoKitUnchecked { try USBSerial() }
+
+    // Host builds intentionally have no SDK-backed USB device. Keep the
+    // connection probe non-throwing and side-effect free; write/read paths
+    // still use the lazy backend and retain their existing trap behavior.
+    var isConnected: Bool { false }
 
     func write(_ text: String) throws(PicoKitError) { try usb.write(text) }
     func write(_ bytes: [UInt8]) throws(PicoKitError) { try usb.write(bytes) }
@@ -240,6 +265,10 @@ public final class PicoSerial: @unchecked Sendable {
     init(backend: any PicoSerialBackend) {
         self.backend = backend
     }
+
+    /// Reports whether the USB CDC host has opened the serial interface.
+    /// Treat this as a snapshot and continue to handle disconnected writes.
+    public var connected: Bool { backend.isConnected }
 
     public func write(_ text: String) {
         picoKitUnchecked { try backend.write(text) }

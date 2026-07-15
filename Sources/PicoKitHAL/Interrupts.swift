@@ -43,7 +43,9 @@ public final class PicoWatchdog {
 
     public func enable(timeout: Duration, pauseOnDebug: Bool = true) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
-        picokit_watchdog_enable(try picoKitWatchdogMilliseconds(timeout), pauseOnDebug ? 1 : 0)
+        let milliseconds = try picoKitWatchdogMilliseconds(timeout)
+        let status = picokit_watchdog_enable(milliseconds, pauseOnDebug ? 1 : 0)
+        guard status == 0 else { throw PicoKitError.invalidTimeout(timeout.microseconds) }
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
         #endif

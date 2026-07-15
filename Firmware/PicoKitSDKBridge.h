@@ -2,9 +2,14 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // This is PicoKit's only Pico SDK-facing header. Swift imports it only while
 // compiling the PicoKit library, never application sources directly.
 void picokit_stdio_init(void);
+uint32_t picokit_stdio_connected(void);
 void picokit_stdio_write(const char *text);
 void picokit_stdio_write_line(const char *text);
 void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count);
@@ -96,5 +101,9 @@ int32_t picokit_interrupt_enable(uint32_t pin, uint32_t edge);
 void picokit_interrupt_disable(uint32_t pin);
 uint32_t picokit_interrupt_take(uint32_t pin);
 
-void picokit_watchdog_enable(uint32_t timeout_ms, uint32_t pause_on_debug);
+int32_t picokit_watchdog_enable(uint32_t timeout_ms, uint32_t pause_on_debug);
 void picokit_watchdog_update(void);
+
+#ifdef __cplusplus
+}
+#endif

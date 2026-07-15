@@ -16,6 +16,9 @@
 #include "pico/critical_section.h"
 #include "pico/runtime.h"
 #include "pico/stdio.h"
+#if PICOKIT_ENABLE_USB
+#include "pico/stdio_usb.h"
+#endif
 #include "pico/stdlib.h"
 #include "pico/status_led.h"
 
@@ -124,6 +127,33 @@ static bool picokit_valid_dma_count(uint32_t count) {
     return count <= 0x0fffffffu;
 #endif
 }
+static bool picokit_valid_i2c_frequency(uint32_t frequency_hz) {
+    if (!frequency_hz) return false;
+
+    // Match the SDK's i2c_set_baudrate calculations before calling i2c_init.
+    // The SDK uses invalid_params/assert for these bounds, which would turn a
+    // recoverable Swift setup error into a firmware reset.
+    uint64_t clock_hz = clock_get_hz(clk_sys);
+    uint64_t period = (clock_hz + frequency_hz / 2u) / frequency_hz;
+    uint64_t low_count = period * 3u / 5u;
+    uint64_t high_count = period - low_count;
+    if (high_count > I2C_IC_FS_SCL_HCNT_IC_FS_SCL_HCNT_BITS ||
+        low_count > I2C_IC_FS_SCL_LCNT_IC_FS_SCL_LCNT_BITS ||
+        high_count < 8u || low_count < 8u) return false;
+
+    uint64_t hold_count = frequency_hz < 1000000u
+        ? (clock_hz * 3u) / 10000000u + 1u
+        : (clock_hz * 3u) / 25000000u + 1u;
+    return low_count >= 2u && hold_count <= low_count - 2u;
+}
+static bool picokit_valid_spi_frequency(uint32_t frequency_hz) {
+    if (!frequency_hz) return false;
+    uint64_t clock_hz = clock_get_hz(clk_peri);
+    // spi_set_baudrate requires baudrate <= clk_peri and must find an even
+    // prescaler no greater than 254 for the requested output frequency.
+    return frequency_hz <= clock_hz &&
+        (uint64_t)frequency_hz * 254u * 256u > clock_hz;
+}
 static bool picokit_valid_result_count(uint32_t count) {
     // Transfer results are reported through int32_t; reject counts that
     // would otherwise wrap into a negative or ambiguous result.
@@ -176,11 +206,24 @@ void picokit_stdio_init(void) {
 // that do not otherwise use Serial never enumerate after `picotool load -f`
 // reboots them into the newly flashed application.
 #if PICOKIT_ENABLE_USB
+// Run after the SDK's standard runtime and IRQ-priority initializers. The USB
+// stdio backend installs a background task/IRQ; registering it earlier than
+// the SDK's per-core IRQ setup can leave TinyUSB answering the device
+// descriptor while stalling SET_CONFIGURATION on RP2350.
 static void picokit_runtime_init_stdio(void) {
     picokit_stdio_init();
 }
-PICO_RUNTIME_INIT_FUNC_RUNTIME(picokit_runtime_init_stdio, "11090");
+PICO_RUNTIME_INIT_FUNC_RUNTIME(picokit_runtime_init_stdio, "13000");
 #endif
+
+uint32_t picokit_stdio_connected(void) {
+#if PICOKIT_ENABLE_USB
+    picokit_stdio_init();
+    return stdio_usb_connected() ? 1u : 0u;
+#else
+    return 0u;
+#endif
+}
 
 void picokit_stdio_write(const char *text) {
     if (text) stdio_put_string(text, -1, false, true);
@@ -407,7 +450,6 @@ static int32_t picokit_pwm_init_impl(
     uint32_t *wrap_out, uint32_t *actual_frequency_out
 ) {
     if (!picokit_valid_gpio(pin) || !frequency_hz || !slice_out || !channel_out || !wrap_out) return -1;
-    gpio_set_function(pin, GPIO_FUNC_PWM);
     uint slice = pwm_gpio_to_slice_num(pin);
     uint32_t clock_hz = clock_get_hz(clk_sys);
     uint64_t cycle_span = (uint64_t)frequency_hz * 65536u;
@@ -417,6 +459,10 @@ static int32_t picokit_pwm_init_impl(
     uint64_t denominator = (uint64_t)divider * frequency_hz;
     uint32_t wrap = (uint32_t)((uint64_t)clock_hz / denominator);
     if (wrap < 2 || wrap > 65536) return -1;
+    // Do not change the pin mux until every frequency and output argument has
+    // passed validation. A rejected configuration must leave the GPIO usable
+    // by the caller's previous peripheral or mode.
+    gpio_set_function(pin, GPIO_FUNC_PWM);
     pwm_set_clkdiv_int_frac(slice, (uint8_t)divider, 0);
     pwm_set_wrap(slice, (uint16_t)(wrap - 1));
     pwm_set_gpio_level(pin, 0);
@@ -501,7 +547,8 @@ static int32_t picokit_i2c_init_impl(
     uint32_t *actual_frequency_out
 ) {
     i2c_inst_t *i2c = picokit_i2c(instance);
-    if (!i2c || !frequency_hz || !picokit_valid_gpio(sda) || !picokit_valid_gpio(scl) ||
+    if (!i2c || !picokit_valid_i2c_frequency(frequency_hz) ||
+        !picokit_valid_gpio(sda) || !picokit_valid_gpio(scl) ||
         !picokit_valid_i2c_pins(instance, sda, scl)) return -1;
     uint32_t actual_frequency = i2c_init(i2c, frequency_hz);
     gpio_set_function(sda, GPIO_FUNC_I2C);
@@ -528,6 +575,9 @@ int32_t picokit_i2c_write(uint32_t instance, uint32_t address, const uint8_t *by
     i2c_inst_t *i2c = picokit_i2c(instance);
     if (!i2c || !picokit_valid_result_count(count) || address < 0x08 || address > 0x77 || (!bytes && count) ||
         timeout_us > UINT32_MAX || nostop > 1) return -1;
+    // The Pico SDK asserts for a zero-length transaction. Keep the C ABI
+    // safe for direct callers as well as the Swift wrapper.
+    if (count == 0) return 0;
     return i2c_write_timeout_us(i2c, (uint8_t)address, bytes, count, nostop != 0, (uint32_t)timeout_us);
 }
 int32_t picokit_i2c_read(uint32_t instance, uint32_t address, uint8_t *bytes, uint32_t count,
@@ -535,13 +585,17 @@ int32_t picokit_i2c_read(uint32_t instance, uint32_t address, uint8_t *bytes, ui
     i2c_inst_t *i2c = picokit_i2c(instance);
     if (!i2c || !picokit_valid_result_count(count) || address < 0x08 || address > 0x77 || (!bytes && count) ||
         timeout_us > UINT32_MAX || nostop > 1) return -1;
+    // See picokit_i2c_write: do not enter the SDK assertion path for empty
+    // reads, even when the bridge is called without Swift's validation.
+    if (count == 0) return 0;
     return i2c_read_timeout_us(i2c, (uint8_t)address, bytes, count, nostop != 0, (uint32_t)timeout_us);
 }
 
 static spi_inst_t *picokit_spi(uint32_t instance) { return instance == 0 ? spi0 : instance == 1 ? spi1 : NULL; }
 int32_t picokit_spi_init(uint32_t instance, uint32_t frequency_hz, uint32_t sck, uint32_t mosi, uint32_t miso) {
     spi_inst_t *spi = picokit_spi(instance);
-    if (!spi || !frequency_hz || !picokit_valid_gpio(sck) || !picokit_valid_gpio(mosi) ||
+    if (!spi || !picokit_valid_spi_frequency(frequency_hz) ||
+        !picokit_valid_gpio(sck) || !picokit_valid_gpio(mosi) ||
         !picokit_valid_gpio(miso) || !picokit_valid_spi_pins(instance, sck, mosi, (int32_t)miso)) return -1;
     spi_init(spi, frequency_hz);
     gpio_set_function(sck, GPIO_FUNC_SPI);
@@ -554,7 +608,8 @@ int32_t picokit_spi_init_config(uint32_t instance, uint32_t frequency_hz, uint32
                                 uint32_t bit_order, uint32_t data_bits,
                                 uint32_t *actual_frequency_hz) {
     spi_inst_t *spi = picokit_spi(instance);
-    if (!spi || !frequency_hz || !picokit_valid_gpio(sck) || !picokit_valid_gpio(mosi) ||
+    if (!spi || !picokit_valid_spi_frequency(frequency_hz) ||
+        !picokit_valid_gpio(sck) || !picokit_valid_gpio(mosi) ||
         miso < -1 || (miso >= 0 && !picokit_valid_gpio((uint32_t)miso)) || mode > 3 || bit_order > 1 ||
         (data_bits != 8 && data_bits != 16) || !picokit_valid_spi_pins(instance, sck, mosi, miso)) return -1;
     uint32_t actual = spi_init(spi, frequency_hz);
@@ -869,5 +924,18 @@ uint32_t picokit_interrupt_take(uint32_t pin) {
     return __atomic_exchange_n(&picokit_interrupt_events[pin], 0u, __ATOMIC_ACQ_REL);
 }
 
-void picokit_watchdog_enable(uint32_t timeout_ms, uint32_t pause_on_debug) { watchdog_enable(timeout_ms, pause_on_debug != 0); }
+static bool picokit_valid_watchdog_timeout_ms(uint32_t timeout_ms) {
+#if PICO_RP2040
+    // The SDK's watchdog counter runs at half-rate on RP2040 because of
+    // erratum RP2040-E1; watchdog_enable asserts above this board limit.
+    return timeout_ms <= WATCHDOG_LOAD_BITS / 2000u;
+#else
+    return timeout_ms <= WATCHDOG_LOAD_BITS / 1000u;
+#endif
+}
+int32_t picokit_watchdog_enable(uint32_t timeout_ms, uint32_t pause_on_debug) {
+    if (!picokit_valid_watchdog_timeout_ms(timeout_ms) || pause_on_debug > 1) return -1;
+    watchdog_enable(timeout_ms, pause_on_debug != 0);
+    return 0;
+}
 void picokit_watchdog_update(void) { watchdog_update(); }

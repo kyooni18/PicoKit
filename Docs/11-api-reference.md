@@ -15,7 +15,7 @@ SwiftPM build unless noted otherwise.
 | API | Surface | Notes |
 |---|---|---|
 | `PicoChip` | `.rp2040`, `.rp2350`, `.compiled` | Chip family; `.compiled` follows the firmware target and uses RP2040 on host builds. |
-| `PicoBoard` | `.pico`, `.picoW`, `.pico2`, `.pico2W` | `chip`, `cmakeName`, `onboardLEDPin`, `onboardLED`, and `init?(configurationName:)`. Configuration also accepts `pico-w` and `pico2-w`. |
+| `PicoBoard` | `.pico`, `.picoW`, `.pico2`, `.pico2W` | `compiled`, `chip`, `cmakeName`, `onboardLEDPin`, `onboardLED`, and `init?(configurationName:)`. Configuration also accepts `pico-w` and `pico2-w`; `compiled` is optional for custom boards. |
 | `PicoKitError` | `invalidPin`, `invalidPeripheralPin`, `invalidFrequency`, `invalidTimeout`, `invalidAddress`, `unavailable`, `timedOut`, `partialTransfer`, `ioFailure`, `ownershipConflict` | All throwing APIs use this error type. `description` is public. |
 | `PicoPin` | `init(_:) throws`, `init?(rawValue:)`, `.gpio0` ... `.gpio29` | GPIO `0...29`; exposes `rawValue` and `description`; comparable. |
 | `Duration` | `.microseconds(_)`, `.milliseconds(_)`, `.seconds(_)` | Positive duration factories; exposes `microseconds`; comparable. |
@@ -127,6 +127,7 @@ operation fails.
 ```swift
 final class USBSerial {
     init() throws
+    var isConnected: Bool { get }
     func write(_ text: String) throws
     func write(_ bytes: [UInt8]) throws
     func read() throws -> UInt8?
@@ -135,6 +136,7 @@ final class USBSerial {
 
 final class PicoSerial {
     init()
+    var connected: Bool { get }
     func write(_ text: String)
     func write(_ bytes: [UInt8])
     func print(_ text: String)
@@ -150,7 +152,13 @@ Create `USBSerial` once when errors must be handled. Its nonblocking `read()`
 returns `nil` when no byte is waiting; its timeout overload throws
 `PicoKitError.timedOut`. `Serial.available` and `Serial.read()` are the
 non-throwing sketch form. `available` retains one lookahead byte, so testing it
-does not discard input. Byte-array writes preserve NUL and non-UTF-8 data.
+does not discard input. Byte-array writes preserve NUL and non-UTF-8 data. The
+CMake option `PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS` accepts `0` (no wait), a
+positive millisecond bound, or `-1` for the Pico SDK's indefinite wait.
+`PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS` defaults to `50` ms and controls the
+additional settle delay after CDC connection; `0` disables that delay.
+For hosts that enumerate CDC without asserting DTR, set
+`PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON`; the default is `OFF`.
 
 ## UART and PWM
 
@@ -338,12 +346,12 @@ final class PicoWatchdog {
 ```
 
 The watchdog hardware uses milliseconds. PicoKit rounds positive sub-millisecond
-durations up to 1 ms and rejects values that exceed the SDK's `UInt32`-
-millisecond limit.
+durations up to 1 ms and rejects values above the board-specific SDK limit:
+8,388 ms on RP2040 and 16,777 ms on RP2350.
 
 GPIO interrupt handlers only coalesce edge bits in the C bridge; call
-`takeEvents(for:)` from foreground code. The watchdog timeout must fit whole
-milliseconds in a `UInt32`; call `update()` before it expires.
+`takeEvents(for:)` from foreground code. The watchdog timeout must stay within
+the board-specific limits above; call `update()` before it expires.
 
 ## Error behavior
 

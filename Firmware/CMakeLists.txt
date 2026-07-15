@@ -6,7 +6,19 @@ if(NOT DEFINED PICOKIT_ROOT)
     get_filename_component(PICOKIT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 endif()
 if(NOT DEFINED PICO_SDK_PATH)
-    set(PICO_SDK_PATH "${PICOKIT_ROOT}/Vendor/pico-sdk")
+    if(DEFINED ENV{PICO_SDK_PATH} AND NOT "$ENV{PICO_SDK_PATH}" STREQUAL "")
+        set(PICO_SDK_PATH "$ENV{PICO_SDK_PATH}")
+    elseif(EXISTS "${PICOKIT_ROOT}/Vendor/pico-sdk/CMakeLists.txt")
+        # PicoKit releases before shared SDK support keep the SDK submodule here.
+        set(PICO_SDK_PATH "${PICOKIT_ROOT}/Vendor/pico-sdk")
+    else()
+        message(FATAL_ERROR
+            "PICO_SDK_PATH is required. Use 'swiftpico build' to use the shared SDK cache, "
+            "or pass -DPICO_SDK_PATH=/path/to/pico-sdk for a direct CMake build.")
+    endif()
+endif()
+if(NOT EXISTS "${PICO_SDK_PATH}/external/pico_sdk_import.cmake")
+    message(FATAL_ERROR "PICO_SDK_PATH does not contain a Pico SDK: ${PICO_SDK_PATH}")
 endif()
 if(NOT DEFINED PICOKIT_PRODUCT)
     set(PICOKIT_PRODUCT "PicoKitFirmware")
@@ -14,11 +26,86 @@ endif()
 if(NOT DEFINED PICOKIT_SOURCE)
     set(PICOKIT_SOURCE "${PICOKIT_ROOT}/Sources/Blink/main.swift")
 endif()
+
+# Direct CMake builds need the Embedded Swift compiler too. SwiftPico passes
+# this cache entry explicitly, but the documented in-tree invocation starts
+# here and otherwise CMake silently selects the host Swift compiler. Preserve
+# explicit caller choices, then follow the same discovery order as SwiftPico:
+# an explicit environment override, the newest installed development snapshot,
+# and Swiftly's selected compiler. If none is available, CMake's normal lookup
+# remains in control and reports the missing or unsuitable compiler.
+if(NOT DEFINED CMAKE_Swift_COMPILER)
+    set(PICOKIT_SWIFT_COMPILER "")
+    if(DEFINED ENV{PICOKIT_SWIFT_COMPILER} AND NOT "$ENV{PICOKIT_SWIFT_COMPILER}" STREQUAL "")
+        set(PICOKIT_SWIFT_COMPILER "$ENV{PICOKIT_SWIFT_COMPILER}")
+    elseif(DEFINED ENV{PICO_SWIFTC} AND NOT "$ENV{PICO_SWIFTC}" STREQUAL "")
+        set(PICOKIT_SWIFT_COMPILER "$ENV{PICO_SWIFTC}")
+    elseif(DEFINED ENV{SWIFTLY_TOOLCHAINS_DIR})
+        file(GLOB PICOKIT_SWIFT_TOOLCHAINS
+            "$ENV{SWIFTLY_TOOLCHAINS_DIR}/swift-DEVELOPMENT-SNAPSHOT-*.xctoolchain")
+        list(SORT PICOKIT_SWIFT_TOOLCHAINS ORDER DESCENDING)
+        if(PICOKIT_SWIFT_TOOLCHAINS)
+            list(GET PICOKIT_SWIFT_TOOLCHAINS 0 PICOKIT_SWIFT_TOOLCHAIN)
+            set(PICOKIT_SWIFT_COMPILER "${PICOKIT_SWIFT_TOOLCHAIN}/usr/bin/swiftc")
+        endif()
+    endif()
+    if(PICOKIT_SWIFT_COMPILER STREQUAL "" AND DEFINED ENV{HOME})
+        file(GLOB PICOKIT_SWIFT_TOOLCHAINS
+            "$ENV{HOME}/Library/Developer/Toolchains/swift-DEVELOPMENT-SNAPSHOT-*.xctoolchain")
+        list(SORT PICOKIT_SWIFT_TOOLCHAINS ORDER DESCENDING)
+        if(PICOKIT_SWIFT_TOOLCHAINS)
+            list(GET PICOKIT_SWIFT_TOOLCHAINS 0 PICOKIT_SWIFT_TOOLCHAIN)
+            set(PICOKIT_SWIFT_COMPILER "${PICOKIT_SWIFT_TOOLCHAIN}/usr/bin/swiftc")
+        endif()
+    endif()
+    if(PICOKIT_SWIFT_COMPILER STREQUAL "" AND
+       DEFINED ENV{SWIFTLY_BIN_DIR} AND
+       EXISTS "$ENV{SWIFTLY_BIN_DIR}/swiftc" AND
+       NOT IS_SYMLINK "$ENV{SWIFTLY_BIN_DIR}/swiftc")
+        # A directly installed binary is safe here. Swiftly's usual symlink is
+        # a dispatcher; CMake must invoke the real toolchain binary directly.
+        set(PICOKIT_SWIFT_COMPILER "$ENV{SWIFTLY_BIN_DIR}/swiftc")
+    endif()
+    if(PICOKIT_SWIFT_COMPILER)
+        if(IS_EXECUTABLE "${PICOKIT_SWIFT_COMPILER}")
+            set(CMAKE_Swift_COMPILER "${PICOKIT_SWIFT_COMPILER}" CACHE FILEPATH
+                "Embedded Swift compiler used by PicoKit firmware")
+            message(STATUS "Using PicoKit Embedded Swift compiler: ${CMAKE_Swift_COMPILER}")
+        else()
+            message(FATAL_ERROR
+                "PICOKIT Swift compiler does not exist or is not executable: ${PICOKIT_SWIFT_COMPILER}")
+        endif()
+    endif()
+endif()
 set(PICOKIT_USB_STDOUT_TIMEOUT_US "10000" CACHE STRING
     "Maximum time USB CDC output may block when the host stops consuming data")
 if(NOT PICOKIT_USB_STDOUT_TIMEOUT_US MATCHES "^[0-9]+$")
     message(FATAL_ERROR "PICOKIT_USB_STDOUT_TIMEOUT_US must be a non-negative integer")
 endif()
+if(PICOKIT_USB_STDOUT_TIMEOUT_US GREATER 4294967295)
+    message(FATAL_ERROR "PICOKIT_USB_STDOUT_TIMEOUT_US must fit UInt32")
+endif()
+set(PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS "0" CACHE STRING
+    "Maximum time USB CDC initialization waits for a host connection (0 disables waiting, -1 waits indefinitely)")
+if(NOT PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS MATCHES "^-?[0-9]+$")
+    message(FATAL_ERROR "PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS must be an integer")
+endif()
+if(PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS LESS -1)
+    message(FATAL_ERROR "PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS must be -1 or a non-negative integer")
+endif()
+if(PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS GREATER 4294967295)
+    message(FATAL_ERROR "PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS must fit UInt32")
+endif()
+set(PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS "50" CACHE STRING
+    "Additional USB CDC settle time after a host connection (milliseconds)")
+if(NOT PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS must be a non-negative integer")
+endif()
+if(PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS GREATER 4294967295)
+    message(FATAL_ERROR "PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS must fit UInt32")
+endif()
+option(PICOKIT_USB_CONNECTION_WITHOUT_DTR
+    "Treat a ready USB CDC interface as connected without requiring host DTR" OFF)
 option(PICOKIT_ENABLE_USB
     "Initialize and link the USB CDC/reset interface for the firmware target" ON)
 # PICOKIT_SOURCE remains the backwards-compatible entry-point hint used by
@@ -41,6 +128,21 @@ if(NOT DEFINED PICOKIT_PROJECT_INITIALIZED)
     project(PicoKitFirmware)
 endif()
 pico_sdk_init()
+
+# Keep BoardLED's runtime declaration tied to the exact board selected by the
+# SDK. This must happen after pico_sdk_init(), because the SDK supplies its
+# default PICO_BOARD (pico) during initialization when callers omit it.
+set(PICOKIT_COMPILED_BOARD 255)
+if(PICO_BOARD STREQUAL "pico")
+    set(PICOKIT_COMPILED_BOARD 0)
+elseif(PICO_BOARD STREQUAL "pico_w")
+    set(PICOKIT_COMPILED_BOARD 1)
+elseif(PICO_BOARD STREQUAL "pico2")
+    set(PICOKIT_COMPILED_BOARD 2)
+elseif(PICO_BOARD STREQUAL "pico2_w")
+    set(PICOKIT_COMPILED_BOARD 3)
+endif()
+message(STATUS "PicoKit compiled board: ${PICO_BOARD} (${PICOKIT_COMPILED_BOARD})")
 
 set(CMAKE_Swift_COMPILATION_MODE wholemodule)
 set(PICOKIT_SWIFT_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/picokit-swift-modules")
@@ -66,20 +168,6 @@ elseif(PICO_PLATFORM STREQUAL "rp2350-riscv")
         " -Xcc -mabi=ilp32")
 else()
     string(APPEND CLANG_ARCH_ABI_FLAGS " -Xcc -mfloat-abi=soft")
-endif()
-
-# Keep BoardLED's runtime declaration tied to the exact board selected by the
-# generated project. Chip-family checks alone cannot distinguish Pico from
-# Pico W, or Pico 2 from Pico 2 W.
-set(PICOKIT_COMPILED_BOARD 255)
-if(PICO_BOARD STREQUAL "pico")
-    set(PICOKIT_COMPILED_BOARD 0)
-elseif(PICO_BOARD STREQUAL "pico_w")
-    set(PICOKIT_COMPILED_BOARD 1)
-elseif(PICO_BOARD STREQUAL "pico2")
-    set(PICOKIT_COMPILED_BOARD 2)
-elseif(PICO_BOARD STREQUAL "pico2_w")
-    set(PICOKIT_COMPILED_BOARD 3)
 endif()
 
 # Layer 4: the only C target that includes Pico SDK headers. All SDK access is
@@ -119,12 +207,22 @@ set(PICOKIT_SDK_LIBRARIES
 # Swift consumer, compiling large portions of the SDK two or three times.
 target_link_libraries(PicoKitSDKBridge PRIVATE ${PICOKIT_SDK_LIBRARIES})
 if(PICOKIT_ENABLE_USB)
+    message(STATUS "PicoKit USB CDC connect wait: ${PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS} ms")
+    message(STATUS "PicoKit USB CDC post-connect delay: ${PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS} ms")
     target_compile_definitions(PicoKitSDKBridge PRIVATE
         PICOKIT_ENABLE_USB=1
         PICO_STDIO_USB_STDOUT_TIMEOUT_US=${PICOKIT_USB_STDOUT_TIMEOUT_US}
+        PICO_STDIO_USB_CONNECT_WAIT_TIMEOUT_MS=${PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS}
+        PICO_STDIO_USB_POST_CONNECT_WAIT_DELAY_MS=${PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS}
         PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
         PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
     )
+    if(PICOKIT_USB_CONNECTION_WITHOUT_DTR)
+        message(STATUS "PicoKit USB CDC connection check: DTR-independent")
+        target_compile_definitions(PicoKitSDKBridge PRIVATE
+            PICO_STDIO_USB_CONNECTION_WITHOUT_DTR=1
+        )
+    endif()
     pico_enable_stdio_usb(PicoKitSDKBridge 1)
 else()
     target_compile_definitions(PicoKitSDKBridge PRIVATE PICOKIT_ENABLE_USB=0)

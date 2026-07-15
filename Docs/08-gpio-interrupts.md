@@ -60,5 +60,5 @@ while true {
 }
 ```
 
-The timeout must fit a `UInt32` count of milliseconds. Give it enough headroom
-for a slow but healthy loop.
+The timeout is limited to 8,388 ms on RP2040 and 16,777 ms on RP2350. Give it
+enough headroom for a slow but healthy loop.

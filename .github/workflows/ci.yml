@@ -78,6 +78,12 @@ jobs:
         run: PICO_TEST_BOARD=pico2_w sh Tests/bridge-warnings.sh
       - name: Verify default direct firmware build
         run: sh Tests/integration/default-firmware.sh
+      - name: Verify direct CMake compiler discovery
+        run: sh Tests/integration/direct-cmake.sh
+      - name: Verify compiler environment overrides
+        run: sh Tests/integration/compiler-discovery.sh
+      - name: Verify CMake USB option validation
+        run: sh Tests/integration/cmake-options.sh
       - name: Verify peripheral pin mux tables
         run: sh Tests/peripheral-pin-mux-validation.sh
       - name: Verify firmware matrix

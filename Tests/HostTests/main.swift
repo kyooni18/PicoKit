@@ -11,6 +11,7 @@ private final class FakeGPIO: DigitalIO {
 }
 
 private final class FakeSerialBackend: PicoSerialBackend {
+    var isConnected = false
     var reads: [UInt8?] = []
     var textWrites: [String] = []
     var byteWrites: [[UInt8]] = []
@@ -74,6 +75,7 @@ struct PicoKitHostTests {
         require(PicoBoard.pico2.onboardLED == 25, "Pico 2 LED mismatch")
         require(PicoBoard.pico2W.onboardLED == nil, "Pico 2 W should use BoardLED")
         require(PicoChip.compiled == .rp2040, "host compiled chip default mismatch")
+        require(PicoBoard.compiled == .pico, "host compiled board default mismatch")
         require(PicoGPIO.compiled.chip == .rp2040, "host compiled GPIO default mismatch")
         require(PicoGPIO().chip == .rp2040, "default GPIO chip mismatch")
         require(PicoPin.gpio18.rawValue == 18, "GPIO convenience value mismatch")
@@ -179,7 +181,7 @@ struct PicoKitHostTests {
         )
         try require(
             try picoKitWatchdogMilliseconds(.milliseconds(UInt64(UInt32.max))) == UInt32.max,
-            "maximum watchdog timeout was rejected"
+            "maximum UInt32 watchdog duration conversion failed"
         )
         requireError(.invalidTimeout(UInt64(UInt32.max) * 1_000 + 1), "watchdog timeout overflow accepted") {
             _ = try picoKitWatchdogMilliseconds(.microseconds(UInt64(UInt32.max) * 1_000 + 1))
@@ -245,6 +247,10 @@ struct PicoKitHostTests {
 
     private static func testSerialFacade() {
         let backend = FakeSerialBackend()
+        require(!PicoSerial().connected, "host serial connection probe should be false")
+        require(!PicoSerial(backend: backend).connected, "fake serial connection default mismatch")
+        backend.isConnected = true
+        require(PicoSerial(backend: backend).connected, "fake serial connection probe mismatch")
         backend.reads = [0, 0xFF, nil]
         let serial = PicoSerial(backend: backend)
 
@@ -273,6 +279,8 @@ struct PicoKitHostTests {
             let _: (PicoSerial) -> Bool = { $0.available }
             let _: (USBSerial, Duration) throws -> UInt8 = { try $0.read(timeout: $1) }
             let _: (USBSerial, [UInt8]) throws -> Void = { try $0.write($1) }
+            let _: (USBSerial) -> Bool = { $0.isConnected }
+            let _: (PicoSerial) -> Bool = { $0.connected }
             let _: (PicoUART) throws -> UInt8? = { try $0.read() }
             let _: (PicoI2C, UInt8, [UInt8], Int, Duration) throws -> [UInt8] = {
                 try $0.writeRead(address: $1, bytes: $2, count: $3, timeout: $4)

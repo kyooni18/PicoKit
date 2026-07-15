@@ -26,6 +26,14 @@ run_cli build --configuration release --context "$anchor/swiftpico.json" >/dev/n
 
 module_dir="$anchor/Firmware/build"
 test -s "$module_dir/PicoKit.swiftmodule"
+# Typecheck with the exact Embedded Swift compiler that produced the module.
+# The host `swiftc` may be first on PATH even when CMake correctly selected an
+# Embedded Swift snapshot, and cannot load armv6m-none-none-eabi's standard
+# library.
+swift_compiler=$(sed -n 's/^CMAKE_Swift_COMPILER:[^=]*=//p' \
+    "$anchor/Firmware/build/CMakeCache.txt" | tail -n 1)
+test -n "$swift_compiler"
+test -x "$swift_compiler"
 
 for template in blink serial adc pwm i2c spi interrupt watchdog; do
     project="$tmp/$template"
@@ -33,7 +41,7 @@ for template in blink serial adc pwm i2c spi interrupt watchdog; do
         --path "$project" --skip-resolve --pico-kit-path "$root" >/dev/null
     source="$project/Sources/$template/main.swift"
     test -s "$source"
-    swiftc -typecheck \
+    "$swift_compiler" -typecheck \
         -target armv6m-none-none-eabi \
         -enable-experimental-feature Embedded \
         -parse-as-library \

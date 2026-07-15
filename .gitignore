@@ -7,3 +7,6 @@ DerivedData/
 Firmware/build*/
 Firmware/**/*.log
 Tools/picotool-build/
+# The Pico SDK is stored once by SwiftPico in its shared cache. Keep a legacy
+# local checkout out of the working tree when upgrading an existing clone.
+Vendor/pico-sdk/

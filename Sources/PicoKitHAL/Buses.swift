@@ -57,6 +57,11 @@ public final class PicoI2C {
             throw PicoKitError.invalidTimeout(timeout.microseconds)
         }
         let count = try picoKitTransferCount(bytes.count, operation: "I2C write")
+        // The Pico SDK rejects zero-length I2C transactions with an assertion.
+        // Treat an empty write as a validated no-op instead of entering that
+        // SDK path; this is also consistent with the transfer APIs' count
+        // semantics.
+        guard count != 0 else { return 0 }
         #if PICOKIT_PICO_SDK
         let result = bytes.withUnsafeBufferPointer {
             picokit_i2c_write(
@@ -93,6 +98,10 @@ public final class PicoI2C {
             throw PicoKitError.invalidTimeout(timeout.microseconds)
         }
         let transferCount = try picoKitTransferCount(count, operation: "I2C read")
+        // The Pico SDK rejects zero-length I2C transactions with an
+        // assertion. Return the requested empty result without touching the
+        // peripheral.
+        guard transferCount != 0 else { return [] }
         #if PICOKIT_PICO_SDK
         var result = [UInt8](repeating: 0, count: count)
         let status = result.withUnsafeMutableBufferPointer {

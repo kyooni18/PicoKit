@@ -14,6 +14,8 @@ try serial.write("System started")
 
 Creating `USBSerial` initializes Pico SDK stdio. Keep the instance around and
 reuse it rather than treating every line of output as a new setup operation.
+`serial.isConnected` reports whether a host currently has the CDC interface
+open; it is only a snapshot, so writes must still handle a disconnect.
 
 USB CDC input is byte-oriented. Poll without blocking, or use a bounded read
 when a command is required:
@@ -61,6 +63,9 @@ The default runtime exposes the same object if you prefer an explicit owner:
 
 ```swift
 pico.serial.println("hello")
+if pico.serial.connected {
+    pico.serial.println("host connected")
+}
 ```
 
 ### Host monitor
@@ -76,6 +81,23 @@ Use SwiftPico to open the board's USB CDC device:
 are sent to the board while firmware output continues to display. `--reconnect`
 waits for the same device after a reset or short USB disconnect. Press Ctrl-C
 to exit.
+
+For firmware that must keep its first diagnostic output until a host is ready,
+set the CMake cache value `-DPICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS=5000`. The
+default is `0`, which preserves non-blocking startup; a positive value waits
+up to that many milliseconds during USB CDC initialization. This setting is
+only applied when `PICOKIT_ENABLE_USB=ON`. Set it to `-1` to wait indefinitely,
+matching the Pico SDK's documented indefinite-wait mode.
+
+`PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS` defaults to `50`, matching the Pico
+SDK's post-connect settle delay. Increase it when a host terminal needs more
+time after CDC enumeration before the first diagnostic output is sent; set it
+to `0` to disable the extra delay.
+
+`PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON` makes `USBSerial.isConnected` and
+`PicoSerial.connected` report the CDC interface as connected once USB is ready,
+without waiting for a terminal to assert DTR. It defaults to `OFF` to preserve
+the SDK's normal terminal-open semantics.
 
 ### Hardware UART
 

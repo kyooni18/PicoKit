@@ -19,11 +19,15 @@ if ! cmake -S "$root/Firmware" -B "$build" -G Ninja \
     -DPICOKIT_PRODUCT=DefaultBoardProbe \
     -DPICOKIT_SOURCE="$root/Sources/Blink/main.swift" \
     -DPICOKIT_ENABLE_USB=ON \
+    -DPICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS=1234 \
     -DPICOKIT_ROOT="$root" >"$configure_log" 2>&1; then
     cat "$configure_log" >&2
     exit 1
 fi
 grep -Fq "Defaulting target board (PICO_BOARD) to 'pico'" "$configure_log"
+grep -Fq "PicoKit compiled board: pico (0)" "$configure_log"
+grep -Fq 'PicoKit USB CDC connect wait: 1234 ms' "$configure_log"
+grep -Fq "Using PicoKit Embedded Swift compiler:" "$configure_log"
 
 if ! cmake --build "$build" --parallel >"$build_log" 2>&1; then
     cat "$build_log" >&2

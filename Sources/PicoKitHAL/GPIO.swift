@@ -183,6 +183,24 @@ private extension PicoBoard {
     }
 }
 
+public extension PicoBoard {
+    /// The exact board selected by the firmware build. Host builds use Pico as
+    /// their validation default; custom firmware boards return `nil`.
+    static var compiled: Self? {
+        #if PICOKIT_PICO_SDK
+        switch picokit_compiled_board() {
+        case 0: return .pico
+        case 1: return .picoW
+        case 2: return .pico2
+        case 3: return .pico2W
+        default: return nil
+        }
+        #else
+        return .pico
+        #endif
+    }
+}
+
 public final class BoardLED {
     /// The board declaration supplied by the application. The concrete LED
     /// implementation still comes from the firmware target's `PICO_BOARD`.
@@ -191,19 +209,10 @@ public final class BoardLED {
     /// Creates a board LED using the exact board selected by the firmware
     /// build, without hardcoding a Pico board in the application source.
     public convenience init() throws(PicoKitError) {
-        #if PICOKIT_PICO_SDK
-        let board: PicoBoard
-        switch picokit_compiled_board() {
-        case 0: board = .pico
-        case 1: board = .picoW
-        case 2: board = .pico2
-        case 3: board = .pico2W
-        default: throw PicoKitError.unavailable("unknown compiled Pico board")
+        guard let board = PicoBoard.compiled else {
+            throw PicoKitError.unavailable("unknown compiled Pico board")
         }
         try self.init(board: board)
-        #else
-        throw PicoKitError.unavailable("Pico SDK bridge")
-        #endif
     }
 
     public init(board: PicoBoard) throws(PicoKitError) {
