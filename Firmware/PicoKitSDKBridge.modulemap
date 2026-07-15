@@ -1,0 +1,4 @@
+module PicoKitSDKBridge {
+    header "PicoKitSDKBridge.h"
+    export *
+}

@@ -26,3 +26,89 @@ jobs:
         run: swift build
       - name: Run host validation
         run: swift run PicoKitHostTests
+      - name: Release build and host validation
+        run: |
+          swift build -c release
+          swift run -c release PicoKitHostTests
+      - name: Verify API documentation
+        run: sh Tests/api-reference.sh
+      - name: Verify documentation consistency
+        run: sh Tests/docs-consistency.sh
+      - name: Verify documentation links
+        run: sh Tests/docs-links.sh
+      - name: Verify documentation link failures
+        run: sh Tests/docs-links-fixture.sh
+      - name: Verify performance fixture contract
+        run: sh Tests/performance-fixture.sh
+      - name: Verify hardware board selection
+        run: sh Tests/hardware-board-validation.sh
+      - name: Verify interrupt bridge atomicity
+        run: sh Tests/bridge-atomic.sh
+      - name: Verify bridge arithmetic
+        run: sh Tests/bridge-validation.sh
+      - name: Verify explicit bridge module
+        run: sh Tests/bridge-module.sh
+      - name: Verify bridge declaration surface
+        run: sh Tests/bridge-surface.sh
+
+  firmware-validation:
+    name: Firmware validation (arm64)
+    runs-on: macos-15
+    env:
+      SWIFTPICO_ROOT: ${{ github.workspace }}/SwiftPico
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v6
+        with:
+          repository: kyooni18/swiftpico
+          path: SwiftPico
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "main-snapshot"
+      - name: Install firmware tools
+        run: |
+          brew list --formula arm-none-eabi-gcc >/dev/null 2>&1 || brew install arm-none-eabi-gcc
+          brew list --formula cmake >/dev/null 2>&1 || brew install cmake
+          brew list --formula ninja >/dev/null 2>&1 || brew install ninja
+      - name: Verify strict bridge warnings
+        run: sh Tests/bridge-warnings.sh
+      - name: Verify strict bridge warnings (RP2350)
+        run: PICO_TEST_BOARD=pico2_w sh Tests/bridge-warnings.sh
+      - name: Verify default direct firmware build
+        run: sh Tests/integration/default-firmware.sh
+      - name: Verify peripheral pin mux tables
+        run: sh Tests/peripheral-pin-mux-validation.sh
+      - name: Verify firmware matrix
+        run: PICOKIT_TEST_ROOT="$GITHUB_WORKSPACE" sh SwiftPico/Tests/firmware-matrix.sh
+      - name: Verify generated template API compatibility
+        run: sh Tests/integration/generated-templates.sh
+      - name: Verify mixed-case product name
+        run: sh Tests/integration/product-name.sh
+      - name: Verify generated Blink templates
+        run: sh Tests/integration/generated-blink.sh
+      - name: Verify USB-disabled firmware
+        run: sh Tests/integration/usb-disabled.sh
+      - name: Verify generated project (RP2040)
+        run: PICO_TEST_BOARD=pico sh Tests/integration/generated-project.sh
+      - name: Verify generated project (RP2040 wireless)
+        run: PICO_TEST_BOARD=pico_w sh Tests/integration/generated-project.sh
+      - name: Verify generated project (RP2350)
+        run: PICO_TEST_BOARD=pico2 sh Tests/integration/generated-project.sh
+      - name: Verify generated project (RP2350 wireless)
+        run: PICO_TEST_BOARD=pico2_w sh Tests/integration/generated-project.sh
+      - name: Verify performance firmware fixture
+        run: sh Tests/integration/performance-firmware.sh
+      - name: Install Pico RISC-V toolchain
+        run: |
+          curl -fL --retry 2 \
+            https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.0-0/riscv-toolchain-15-mac.zip \
+            -o "$RUNNER_TEMP/riscv-toolchain.zip"
+          echo "394da9da684da0d7347d57edcdb07144acef81c5667521b5f29cff89f602a4fd  $RUNNER_TEMP/riscv-toolchain.zip" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/riscv-toolchain"
+          unzip -q "$RUNNER_TEMP/riscv-toolchain.zip" -d "$RUNNER_TEMP/riscv-toolchain"
+      - name: Verify RP2350 RISC-V firmware
+        env:
+          PICO_TOOLCHAIN_PATH: ${{ runner.temp }}/riscv-toolchain
+        run: sh Tests/integration/riscv-firmware.sh

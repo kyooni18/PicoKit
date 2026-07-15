@@ -71,7 +71,7 @@ something your application can handle:
 ```swift
 import PicoKit
 
-let led = try BoardLED(board: .pico)
+let led = try BoardLED()
 let period = try Duration.milliseconds(500)
 
 while true {
@@ -83,7 +83,7 @@ while true {
 At that layer, GPIO pins are `PicoPin`, never unchecked integers:
 
 ```swift
-let gpio = PicoGPIO(chip: .rp2040)
+let gpio = PicoGPIO.compiled
 let pin = try PicoPin(15)
 try gpio.setMode(pin, mode: .output)
 try gpio.write(pin, state: .high)
@@ -135,7 +135,7 @@ PWM keeps the same `analogWrite` name, with an 8-bit duty cycle:
 
 ```swift
 let pwm = try PicoPWM(pin: try PicoPin(0), frequency: .kilohertz(1))
-try analogWrite(0, 128, using: pwm) // 50% duty cycle
+try analogWrite(0, UInt8(128), using: pwm) // 50% duty cycle
 ```
 
 The lower-level timing helpers are SDK-backed too: `try delay(500)`,
@@ -150,7 +150,8 @@ let uart = try PicoUART(
     .uart0,
     baudRate: .hertz(115_200),
     tx: try PicoPin(0),
-    rx: try PicoPin(1)
+    rx: try PicoPin(1),
+    chip: .compiled
 )
 _ = try uart.write(Array("hello\r\n".utf8), timeout: .milliseconds(100))
 ```
@@ -176,11 +177,28 @@ arguments without requiring attached hardware:
 
 ```sh
 sh Tests/integration/generated-project.sh
+# Verify generated Blink templates for all supported boards.
+sh Tests/integration/generated-blink.sh
+# Typecheck every SwiftPico template against the Embedded Swift PicoKit module.
+sh Tests/integration/generated-templates.sh
+```
+
+To verify the documented no-USB firmware mode on every supported board alias, run:
+
+```sh
+sh Tests/integration/usb-disabled.sh
 ```
 
 Set `PICO_HARDWARE_TEST=1` to additionally flash one detected Pico and verify
-an exact binary USB CDC echo. If no single device is present, that optional
-section reports `SKIPPED`. SwiftPico also owns CLI and multi-board tests:
+an exact binary USB CDC echo. A board in BOOTSEL mode is flashed even without a
+serial node; the echo portion is skipped only if CDC does not return. Select the connected family with
+`PICO_TEST_BOARD=pico` (default), `pico_w`, `pico2`, or `pico2_w`; the script
+checks BOOTSEL chip identity before flashing. If no single device is present,
+that optional section reports `SKIPPED`. SwiftPico also owns CLI and multi-board tests:
+
+Set `PICO_HARDWARE_REQUIRE_CDC=1` to make missing CDC enumeration fail instead
+of reporting the flash-only diagnostic; the firmware image is checked for its
+USB startup hook and TinyUSB symbols before flashing.
 
 ```sh
 cd ../SwiftPico
@@ -188,6 +206,9 @@ sh Tests/cli-integration.sh
 # On a firmware toolchain host:
 sh Tests/firmware-matrix.sh
 ```
+
+The repository CI runs this matrix on an arm64 macOS runner and also verifies
+the USB-disabled firmware path.
 
 Create and use a project from any working directory:
 

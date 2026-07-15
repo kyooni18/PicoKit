@@ -14,7 +14,7 @@ SwiftPM build unless noted otherwise.
 
 | API | Surface | Notes |
 |---|---|---|
-| `PicoChip` | `.rp2040`, `.rp2350` | Chip family. |
+| `PicoChip` | `.rp2040`, `.rp2350`, `.compiled` | Chip family; `.compiled` follows the firmware target and uses RP2040 on host builds. |
 | `PicoBoard` | `.pico`, `.picoW`, `.pico2`, `.pico2W` | `chip`, `cmakeName`, `onboardLEDPin`, `onboardLED`, and `init?(configurationName:)`. Configuration also accepts `pico-w` and `pico2-w`. |
 | `PicoKitError` | `invalidPin`, `invalidPeripheralPin`, `invalidFrequency`, `invalidTimeout`, `invalidAddress`, `unavailable`, `timedOut`, `partialTransfer`, `ioFailure`, `ownershipConflict` | All throwing APIs use this error type. `description` is public. |
 | `PicoPin` | `init(_:) throws`, `init?(rawValue:)`, `.gpio0` ... `.gpio29` | GPIO `0...29`; exposes `rawValue` and `description`; comparable. |
@@ -48,8 +48,9 @@ These helpers validate the integer pin before calling the supplied object.
 final class PicoGPIO: DigitalIO {
     static var rp2040: PicoGPIO { get }
     static var rp2350: PicoGPIO { get }
+    static var compiled: PicoGPIO { get }
     let chip: PicoChip
-    init(chip: PicoChip = .rp2040)
+    init(chip: PicoChip = .compiled)
     func setMode(_ pin: PicoPin, mode: PinMode) throws
     func configure(_ pin: PicoPin, mode: PinMode, initialState: PinState,
                    pull: PinPull, driveStrength: PinDriveStrength,
@@ -67,11 +68,20 @@ final class PicoGPIO: DigitalIO {
     func digitalToggle(_ pin: Int) throws
 }
 
+`PicoGPIO(chip:)` keeps the selected chip as an explicit declaration. Its
+firmware operations reject a declaration that differs from the compiled Pico
+target; use `PicoGPIO.rp2040` or `PicoGPIO.rp2350` to make that choice explicit.
+
 final class BoardLED {
+    init() throws
     init(board: PicoBoard) throws
+    let board: PicoBoard
     func set(_ state: PinState) throws
     func toggle() throws
 }
+
+`BoardLED` rejects a board declaration whose RP2040/RP2350 chip does not
+match the firmware target selected by `PICO_BOARD`.
 
 enum Clock {
     static func now() -> UInt64
@@ -148,11 +158,16 @@ does not discard input. Byte-array writes preserve NUL and non-UTF-8 data.
 enum UARTInstance: UInt32 { case uart0, uart1 }
 
 final class PicoUART {
-    init(_ instance: UARTInstance, baudRate: Frequency, tx: PicoPin, rx: PicoPin) throws
+    init(_ instance: UARTInstance, baudRate: Frequency, tx: PicoPin, rx: PicoPin,
+         chip: PicoChip = .compiled) throws
     let instance: UARTInstance
+    let chip: PicoChip
+    let actualBaudRate: Frequency
     func write(_ bytes: [UInt8], timeout: Duration) throws -> Int
     func writeDMA(_ bytes: [UInt8]) throws
+    func writeDMA(_ bytes: [UInt8], timeout: Duration) throws
     func releaseDMAChannel()
+    func read() throws -> UInt8?
     func read(timeout: Duration) throws -> UInt8
 }
 
@@ -162,6 +177,7 @@ final class PicoPWM {
     init(pin: PicoPin, frequency: Frequency) throws
     let pin: PicoPin
     let counterTop: UInt16
+    let actualFrequency: Frequency
     func setDutyCycle(_ fraction: UInt16) throws
     func setCounterLevel(_ level: UInt16) throws
     func analogWrite(_ duty: UInt8) throws
@@ -180,9 +196,20 @@ func analogWrite(_ pin: Int, _ duty: UInt8, using pwm: PicoPWM) throws
 func analogWrite(_ pin: Int, _ duty: UInt16, using pwm: PicoPWM) throws
 ```
 
-UART reads and writes are bounded by `Duration`. PWM `UInt8` writes map
+UART reads and writes are bounded by `Duration`; a UART write that expires
+after accepting only part of its buffer reports `partialTransfer`. PWM `UInt8` writes map
 `0...255` onto the full `UInt16` duty range; `UInt16` writes use the raw range.
+Transfer counts are limited to `Int32.max` elements because the SDK bridge
+reports counts as signed 32-bit values; an oversized buffer is rejected before
+the hardware call with `PicoKitError.ioFailure`.
 The global PWM helpers require the supplied pin to match `pwm.pin`.
+UART construction validates TX/RX pin muxing for the selected chip, including
+the RP2350 auxiliary UART mux positions, and firmware rejects a chip
+declaration that differs from its compiled Pico target. The existing
+initializer behavior defaults to RP2040; pass `chip: .rp2350` for Pico 2
+configurations. TX and RX must be different physical pins. I2C rejects
+shared SDA/SCL pins, and SPI rejects shared SCK/MOSI/MISO roles in addition to
+its chip-select conflict check.
 
 ## ADC, I2C, and SPI
 
@@ -202,9 +229,14 @@ enum I2CInstance: UInt32 { case i2c0, i2c1 }
 final class PicoI2C {
     init(_ instance: I2CInstance, frequency: Frequency, sda: PicoPin, scl: PicoPin) throws
     let instance: I2CInstance
-    func write(address: UInt8, bytes: [UInt8], timeout: Duration) throws -> Int
-    func read(address: UInt8, count: Int, timeout: Duration) throws -> [UInt8]
+    let actualFrequency: Frequency
+    func write(address: UInt8, bytes: [UInt8], timeout: Duration, stop: Bool = true) throws -> Int
+    func read(address: UInt8, count: Int, timeout: Duration, stop: Bool = true) throws -> [UInt8]
+    func writeRead(address: UInt8, bytes: [UInt8], count: Int, timeout: Duration) throws -> [UInt8]
 }
+
+Both I2C methods issue STOP by default. Pass `stop: false` to retain the bus
+for a repeated START before the next operation.
 
 enum SPIInstance: UInt32 { case spi0, spi1 }
 enum SPIMode: UInt32 { case mode0, mode1, mode2, mode3 }
@@ -220,27 +252,71 @@ final class PicoSPI {
     let instance: SPIInstance
     let actualFrequency: Frequency
     let dataBits: SPIDataBits
+    let miso: PicoPin?
     let chipSelect: PicoPin?
     func select() throws
     func deselect() throws
     func write(_ bytes: [UInt8]) throws
+    func read(count: Int, repeatedByte: UInt8 = 0) throws -> [UInt8]
+    func read(count: Int, repeatedByte: UInt8 = 0, timeout: Duration) throws -> [UInt8]
+    func read(_ count: Int, repeatedWord: UInt16 = 0) throws -> [UInt16]
+    func read(_ count: Int, repeatedWord: UInt16 = 0, timeout: Duration) throws -> [UInt16]
     func write(_ bytes: [UInt8], timeout: Duration) throws
     func write(_ words: [UInt16]) throws
+    func write(_ words: [UInt16], timeout: Duration) throws
     func writeDMA(_ bytes: [UInt8]) throws
+    func writeDMA(_ bytes: [UInt8], timeout: Duration) throws
     func writeDMA(_ words: [UInt16]) throws
+    func writeDMA(_ words: [UInt16], timeout: Duration) throws
+    func transferDMA(_ bytes: [UInt8]) throws -> [UInt8]
+    func transferDMA(_ bytes: [UInt8], timeout: Duration) throws -> [UInt8]
+    func transferDMA(_ words: [UInt16]) throws -> [UInt16]
+    func transferDMA(_ words: [UInt16], timeout: Duration) throws -> [UInt16]
     func releaseDMAChannels()
     func transfer(_ bytes: [UInt8], timeout: Duration) throws -> [UInt8]
+    func transfer(_ words: [UInt16], timeout: Duration) throws -> [UInt16]
 }
 ```
+
+When `chipSelect` is supplied without `gpio`, firmware creates the GPIO
+controller for the compiled RP2040 or RP2350 target. Pass `gpio` explicitly
+when the application owns a configured GPIO controller.
+
+ADC conversions are serialized in the bridge because channel selection and
+temperature-sensor mode are shared by the ADC peripheral. Separate
+`PicoADC` values may therefore be used safely from concurrent callers.
 
 `analogRead(pin:using:)` accepts GPIO26 through GPIO29. I2C validates 7-bit
 addresses in `0x08...0x77`, rejects a negative count, and reports
 `invalidTimeout` if a duration exceeds the SDK's `UInt32`-microsecond limit.
+I2C writes issue STOP by default; pass `stop: false` for a repeated-START
+register transaction before a following read. `writeRead` validates the
+complete composed operation before issuing either transaction.
 SPI supports write-only operation without MISO, modes 0 through 3, both bit
-orders, 8/16-bit formats, actual-baud reporting, and explicit chip-select.
+orders, 8/16-bit formats, full-duplex transfers for both frame widths,
+actual-frequency reporting, and explicit chip-select.
+`transfer(_:timeout:)` and `transferDMA(_:)` are full-duplex and require `miso`
+to be configured; write-only instances remain valid for blocking and DMA writes.
+The chip-select
+pin must be distinct from SCK, MOSI, and MISO; SCK, MOSI, and MISO must also be
+distinct from one another.
+`read(count:repeatedByte:)` is a blocking 8-bit receive operation that clocks
+the repeated byte on MOSI and also requires `miso`. In 16-bit mode,
+`read(_:repeatedWord:)` provides the corresponding repeated-word operation.
+Both receive-only operations also accept `timeout:` to bound the complete
+operation; the overloads without a timeout remain blocking.
+The 16-bit `write` overload also accepts `timeout:` and reports
+`partialTransfer` when output cannot complete before the deadline.
 Blocking writes use the SDK bulk path without an RX allocation; timed writes
-report `partialTransfer`. DMA writes synchronously claim and release their DMA
-channel(s) and retain no caller buffer. Full-duplex deadline failures use `timedOut`.
+report `partialTransfer`. DMA writes and DMA transfers synchronously claim and
+wait for their paired DMA channels, retain no caller buffer, and keep the
+channels for reuse until the
+matching `releaseDMA...()` method is called or the owning object deinitializes.
+Bounded DMA calls clean up and abort retained channels before returning
+`timedOut`; DMA hardware faults are reported as `ioFailure`.
+
+I2C operations report a positive short transfer as `partialTransfer`; negative
+bridge statuses remain `timedOut` or `ioFailure` according to the operation.
 
 ## Interrupts and watchdog
 
@@ -250,6 +326,7 @@ enum GPIOInterruptEdge: UInt32 { case rising = 1, falling = 2, either = 3 }
 final class PicoInterrupts {
     init()
     func enable(_ pin: PicoPin, edge: GPIOInterruptEdge) throws
+    func disable(_ pin: PicoPin)
     func takeEvents(for pin: PicoPin) -> UInt32
 }
 
@@ -259,6 +336,10 @@ final class PicoWatchdog {
     func update()
 }
 ```
+
+The watchdog hardware uses milliseconds. PicoKit rounds positive sub-millisecond
+durations up to 1 ms and rejects values that exceed the SDK's `UInt32`-
+millisecond limit.
 
 GPIO interrupt handlers only coalesce edge bits in the C bridge; call
 `takeEvents(for:)` from foreground code. The watchdog timeout must fit whole
@@ -275,4 +356,4 @@ milliseconds in a `UInt32`; call `update()` before it expires.
 | Missing SDK bridge or unsupported feature | `unavailable` |
 | Bounded operation made no progress before its deadline | `timedOut` |
 | Other Pico SDK failure | `ioFailure` |
-| Helper used with the wrong peripheral-owned pin | `ownershipConflict` |
+| Helper or peripheral configuration has a pin/instance conflict | `ownershipConflict` |

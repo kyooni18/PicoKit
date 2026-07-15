@@ -9,6 +9,7 @@
 public enum PicoChip {
     case rp2040
     case rp2350
+    static var compiled: PicoChip { get }
 }
 ```
 
@@ -119,7 +120,8 @@ Low-level APIs report `PicoKitError`:
 | `invalidAddress` | I2C address is outside `0x08...0x77` |
 | `unavailable` | Hardware bridge or board feature is unavailable |
 | `timedOut` | A bounded operation made no progress before its deadline |
+| `partialTransfer` | A transfer completed only part of the requested elements |
 | `ioFailure` | Pico SDK returned another failure |
-| `ownershipConflict` | A helper received the wrong peripheral-owned pin |
+| `ownershipConflict` | A peripheral pin or instance conflicts with the requested operation; `description` preserves the specific conflict reason |
 
 `PicoKitError.description` is suitable for logs during board bring-up.

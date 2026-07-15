@@ -44,8 +44,8 @@ public enum PicoKitError: Error, Equatable, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .invalidPin(let pin): "GPIO pin \(pin) is outside 0...29"
-        case .invalidFrequency(let hertz): "frequency \(hertz) Hz must be greater than zero"
-        case .invalidTimeout(let microseconds): "timeout \(microseconds) us must be greater than zero"
+        case .invalidFrequency(let hertz): "frequency \(hertz) Hz is zero, overflows, or is unsupported"
+        case .invalidTimeout(let microseconds): "timeout \(microseconds) us is zero, overflows, or is unsupported"
         case .invalidAddress(let address): "I2C address 0x\(String(address, radix: 16)) is outside 0x08...0x77"
         case .invalidPeripheralPin(let peripheral, let pin): "\(pin) cannot be used as \(peripheral)"
         case .unavailable(let feature): "\(feature) is unavailable for this board or build"
@@ -53,7 +53,7 @@ public enum PicoKitError: Error, Equatable, Sendable, CustomStringConvertible {
         case .partialTransfer(let operation, let transferred, let expected):
             "\(operation) transferred \(transferred) of \(expected) elements"
         case .ioFailure(let operation, let status): "\(operation) failed with SDK status \(status)"
-        case .ownershipConflict(let peripheral): "\(peripheral) is already owned by another PicoKit instance"
+        case .ownershipConflict(let reason): reason
         }
     }
 }

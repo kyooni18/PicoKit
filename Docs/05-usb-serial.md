@@ -87,11 +87,28 @@ let uart = try PicoUART(
     .uart0,
     baudRate: .hertz(115_200),
     tx: try PicoPin(0),
-    rx: try PicoPin(1)
+    rx: try PicoPin(1),
+    chip: .compiled
 )
 try uart.write(Array("hello\r\n".utf8), timeout: .milliseconds(100))
 let byte = try uart.read(timeout: .milliseconds(100))
 ```
 
+For polling loops, `PicoUART.read()` returns one byte immediately or `nil` if
+the RX FIFO is empty. Use the timeout overload when input must arrive before
+the call returns.
+
 Both USB CDC and UART are byte streams. PicoKit does not provide framing,
 line buffering, parity/stop-bit configuration, or concurrent-access control.
+`PicoUART.write(_:timeout:)` returns the full byte count on success. If the
+deadline expires after only part of the buffer enters the UART FIFO, it throws
+`PicoKitError.partialTransfer` with the accepted and expected counts.
+`PicoUART.writeDMA(_:timeout:)` provides the same bounded-resource behavior for
+prepared DMA output; a timeout aborts the active channel before returning.
+`uart.actualBaudRate` reports the baud rate actually selected by the SDK.
+The `chip` argument defaults to `.compiled`, which follows the firmware target.
+Pass `.rp2040` or `.rp2350` explicitly when a driver intentionally targets a
+specific chip family; UART0 uses TX/RX pairs
+`0/1, 2/3, 12/13, 14/15, 16/17, 18/19, 28/29`, while UART1 uses
+`4/5, 6/7, 8/9, 10/11, 20/21, 22/23, 24/25, 26/27` on RP2350. The
+even-numbered alternate positions use the SDK's auxiliary UART mux.

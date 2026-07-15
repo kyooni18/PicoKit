@@ -1,5 +1,7 @@
 #if !PICOKIT_PICO_SDK
 import PicoKitCore
+#else
+import PicoKitSDKBridge
 #endif
 
 public enum GPIOInterruptEdge: UInt32, Sendable { case rising = 1, falling = 2, either = 3 }
@@ -19,6 +21,14 @@ public final class PicoInterrupts {
         #endif
     }
 
+    /// Disables both rising- and falling-edge delivery for `pin` and clears
+    /// events recorded before the disable took effect.
+    public func disable(_ pin: PicoPin) {
+        #if PICOKIT_PICO_SDK
+        picokit_interrupt_disable(pin.rawValue)
+        #endif
+    }
+
     public func takeEvents(for pin: PicoPin) -> UInt32 {
         #if PICOKIT_PICO_SDK
         return picokit_interrupt_take(pin.rawValue)
@@ -33,10 +43,7 @@ public final class PicoWatchdog {
 
     public func enable(timeout: Duration, pauseOnDebug: Bool = true) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
-        guard timeout.microseconds <= UInt64(UInt32.max) * 1_000 else {
-            throw PicoKitError.invalidTimeout(timeout.microseconds)
-        }
-        picokit_watchdog_enable(UInt32(timeout.microseconds / 1_000), pauseOnDebug ? 1 : 0)
+        picokit_watchdog_enable(try picoKitWatchdogMilliseconds(timeout), pauseOnDebug ? 1 : 0)
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
         #endif
@@ -47,4 +54,14 @@ public final class PicoWatchdog {
         picokit_watchdog_update()
         #endif
     }
+}
+
+@inline(__always)
+func picoKitWatchdogMilliseconds(_ timeout: Duration) throws(PicoKitError) -> UInt32 {
+    let milliseconds = timeout.microseconds / 1_000
+        + (timeout.microseconds % 1_000 == 0 ? 0 : 1)
+    guard milliseconds <= UInt64(UInt32.max) else {
+        throw PicoKitError.invalidTimeout(timeout.microseconds)
+    }
+    return UInt32(milliseconds)
 }

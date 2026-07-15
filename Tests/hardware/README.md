@@ -27,6 +27,8 @@ project and uses a fake picotool, so it is safe without hardware:
 
 ```sh
 sh Tests/integration/generated-project.sh
+sh Tests/integration/generated-blink.sh
+sh Tests/integration/generated-templates.sh
 ```
 
 With exactly one Pico USB serial device connected, enable the physical section:
@@ -36,6 +38,13 @@ PICO_HARDWARE_TEST=1 sh Tests/integration/generated-project.sh
 ```
 
 It flashes the generated UF2, waits for the CDC device to return, then verifies
-an exact byte sequence including NUL and `0xFF`. No device or multiple devices
-produce an explicit `SKIPPED`; a detected device that fails flash or echo fails
-the test.
+an exact byte sequence including NUL and `0xFF`. A board already in BOOTSEL
+mode is flashed even when no serial node exists; if CDC does not enumerate
+after that successful flash, only the echo portion is explicitly skipped. With
+no detected board, or multiple serial devices and no BOOTSEL device, the whole
+physical section is skipped; a detected serial device that fails flash or echo
+fails the test.
+
+Set `PICO_HARDWARE_REQUIRE_CDC=1` when CDC enumeration is mandatory; this turns
+the no-CDC-after-flash diagnostic into a failure. The image is also checked for
+the PicoKit startup hook and TinyUSB/stdio symbols before any physical flash.

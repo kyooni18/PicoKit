@@ -7,11 +7,16 @@ fast paths only after measuring a peripheral-bound workload:
   already-configured GPIO pins with one register operation.
 - PWM and repeated ADC reads keep setup metadata in the bridge; create the
   peripheral once, then reuse it.
-- `PicoSPI.writeDMA(_:)` and `PicoUART.writeDMA(_:)` synchronously send a
-  prepared buffer through DMA. They are best for sufficiently large output
-  buffers, not single-byte commands. Each peripheral retains its claimed DMA
-  channel(s) between calls. Call `releaseDMAChannels()` on SPI or
+- `PicoSPI.writeDMA(_:)`, `PicoSPI.transferDMA(_:)`, and
+  `PicoUART.writeDMA(_:)` synchronously process prepared buffers through DMA.
+  They are best for sufficiently large output or full-duplex buffers, not
+  single-byte commands. Each peripheral retains its claimed DMA channel(s)
+  between calls. Call `releaseDMAChannels()` on SPI or
   `releaseDMAChannel()` on UART when another subsystem needs those resources.
+  Use `PicoUART.writeDMA(_:timeout:)` when a bounded DMA wait is required; a
+  timeout aborts the active UART channel before the call returns.
+  SPI DMA writes and full-duplex transfers also provide `timeout:` overloads;
+  those abort both paired channels before reporting a timeout.
 - Use hardware PWM, PIO, or focused C for cycle-critical waveforms, bit-banged
   protocols, and continuous capture. PicoKit deliberately has no PIO or
   asynchronous DMA API yet.
@@ -26,10 +31,13 @@ Build it in Release mode for the RP2350 target, then flash and monitor it with
 SwiftPico:
 
 ```sh
+export PATH="/opt/homebrew/bin:$PATH"
+export CMAKE_OSX_ARCHITECTURES="$(uname -m)"
 cmake -S Firmware -B Firmware/build-performance -G Ninja \
   -DPICO_BOARD=pico2_w \
   -DPICOKIT_PRODUCT=Performance \
   -DPICOKIT_SOURCE="$PWD/Sources/Performance/main.swift" \
+  -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build Firmware/build-performance --parallel
 ```

@@ -13,6 +13,13 @@ let pin = try PicoPin(15)
 try interrupts.enable(pin, edge: .either)
 ```
 
+Disable delivery when the input is no longer owned by the interrupt-driven
+part of the application. Disabling also clears already-recorded edge bits:
+
+```swift
+interrupts.disable(pin)
+```
+
 The supported edge selections are:
 
 ```swift
@@ -21,8 +28,8 @@ The supported edge selections are:
 .either
 ```
 
-The C interrupt handler records SDK event bits in a per-pin array. Foreground
-Swift code retrieves and clears them:
+The C interrupt handler records SDK event bits in a per-pin atomic word.
+Foreground Swift code retrieves and atomically clears them:
 
 ```swift
 let events = interrupts.takeEvents(for: pin)

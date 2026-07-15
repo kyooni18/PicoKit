@@ -18,9 +18,11 @@ For the full 16-bit range, set the duty cycle directly:
 try pwm.setDutyCycle(32_768)
 ```
 
-For a hot loop that already produces PWM-counter units, bypass the duty-scale
-division with the explicit fast path. `counterTop` is the maximum level for the
-selected frequency; larger inputs saturate at full duty.
+`actualFrequency` reports the frequency produced after the SDK clock-divider
+and counter-wrap quantization. For a hot loop that already produces
+PWM-counter units, bypass the duty-scale division with the explicit fast path.
+`counterTop` is the maximum level for the selected frequency; larger inputs
+saturate at full duty.
 
 ```swift
 try pwm.setCounterLevel(nextCounterValue)
@@ -38,7 +40,7 @@ The free helper keeps the pin at the call site and checks that it matches the
 pin owned by the PWM object:
 
 ```swift
-try analogWrite(0, 128, using: pwm)
+try analogWrite(0, UInt8(128), using: pwm)
 ```
 
 A mismatched pin throws `PicoKitError.ownershipConflict`.

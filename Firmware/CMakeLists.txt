@@ -55,21 +55,61 @@ set(CMAKE_Swift_COMPILER_WORKS YES CACHE INTERNAL "Embedded Swift compiler is us
 enable_language(Swift)
 
 set(SWIFT_TARGET "armv6m-none-none-eabi")
+set(CLANG_ARCH_ABI_FLAGS "")
 if(PICO_PLATFORM STREQUAL "rp2350-arm-s")
     set(SWIFT_TARGET "armv7em-none-none-eabi")
-    list(APPEND CLANG_ARCH_ABI_FLAGS "-Xcc -mfloat-abi=soft")
+    string(APPEND CLANG_ARCH_ABI_FLAGS " -Xcc -mfloat-abi=soft")
 elseif(PICO_PLATFORM STREQUAL "rp2350-riscv")
     set(SWIFT_TARGET "riscv32-none-none-eabi")
-    list(APPEND CLANG_ARCH_ABI_FLAGS "-Xcc -march=rv32imac_zicsr_zifencei_zba_zbb_zbs_zbkb" "-Xcc -mabi=ilp32")
+    string(APPEND CLANG_ARCH_ABI_FLAGS
+        " -Xcc -march=rv32imac_zicsr_zifencei_zba_zbb_zbs_zbkb"
+        " -Xcc -mabi=ilp32")
 else()
-    list(APPEND CLANG_ARCH_ABI_FLAGS "-Xcc -mfloat-abi=soft")
+    string(APPEND CLANG_ARCH_ABI_FLAGS " -Xcc -mfloat-abi=soft")
+endif()
+
+# Keep BoardLED's runtime declaration tied to the exact board selected by the
+# generated project. Chip-family checks alone cannot distinguish Pico from
+# Pico W, or Pico 2 from Pico 2 W.
+set(PICOKIT_COMPILED_BOARD 255)
+if(PICO_BOARD STREQUAL "pico")
+    set(PICOKIT_COMPILED_BOARD 0)
+elseif(PICO_BOARD STREQUAL "pico_w")
+    set(PICOKIT_COMPILED_BOARD 1)
+elseif(PICO_BOARD STREQUAL "pico2")
+    set(PICOKIT_COMPILED_BOARD 2)
+elseif(PICO_BOARD STREQUAL "pico2_w")
+    set(PICOKIT_COMPILED_BOARD 3)
 endif()
 
 # Layer 4: the only C target that includes Pico SDK headers. All SDK access is
 # behind fixed-width C functions so embedded Swift never imports SDK inlines.
 set(PICOKIT_BRIDGE_DIR "${PICOKIT_ROOT}/Firmware")
+set(PICOKIT_BRIDGE_MODULE_MAP "${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.modulemap")
 add_library(PicoKitSDKBridge STATIC "${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c")
 target_include_directories(PicoKitSDKBridge PUBLIC "${PICOKIT_BRIDGE_DIR}")
+target_compile_definitions(PicoKitSDKBridge PRIVATE
+    PICOKIT_COMPILED_BOARD=${PICOKIT_COMPILED_BOARD}
+)
+option(PICOKIT_BRIDGE_WARNINGS
+    "Enable strict warnings for PicoKitSDKBridge.c" OFF)
+if(PICOKIT_BRIDGE_WARNINGS)
+    set(PICOKIT_BRIDGE_WARNING_FLAGS
+        -Wall -Wextra -Wconversion -Wshadow
+        -Wstrict-prototypes -Wmissing-prototypes
+        -Wcast-align -Wcast-qual -Wpointer-arith -Wformat=2
+        -fanalyzer -Werror
+    )
+    set_source_files_properties("${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c"
+        PROPERTIES COMPILE_OPTIONS
+        "${PICOKIT_BRIDGE_WARNING_FLAGS}"
+    )
+else()
+    # Clear source properties when an existing build directory is reconfigured
+    # from ON to OFF; CMake does not remove them automatically.
+    set_source_files_properties("${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c"
+        PROPERTIES COMPILE_OPTIONS "")
+endif()
 set(PICOKIT_SDK_LIBRARIES
     pico_stdlib pico_status_led hardware_adc hardware_dma hardware_i2c
     hardware_pwm hardware_spi hardware_watchdog
@@ -99,11 +139,16 @@ file(GLOB PICOKIT_HAL_SOURCES CONFIGURE_DEPENDS "${PICOKIT_ROOT}/Sources/PicoKit
 file(GLOB PICOKIT_FACADE_SOURCES CONFIGURE_DEPENDS "${PICOKIT_ROOT}/Sources/PicoKitFacade/*.swift")
 add_library(PicoKit STATIC ${PICOKIT_CORE_SOURCES} ${PICOKIT_HAL_SOURCES} ${PICOKIT_FACADE_SOURCES})
 set_target_properties(PicoKit PROPERTIES LINKER_LANGUAGE CXX Swift_MODULE_NAME PicoKit)
-target_link_libraries(PicoKit PUBLIC PicoKitSDKBridge)
+# Keep the bridge's SDK interface private to PicoKit. Static-library
+# dependencies still need to be listed on the final firmware target, but
+# exposing the bridge publicly makes CMake forward every valued Pico SDK
+# definition into the application's Swift compile command.
+target_link_libraries(PicoKit PRIVATE PicoKitSDKBridge)
 
 # Pico SDK interface targets contain C-only options. Keep them on C targets;
-# Swift receives the architecture, module, bridge header, and SDK definitions
-# it needs, but never raw C compiler flags.
+# Swift receives only the architecture, module, and bridge header it needs.
+# SDK definitions remain available to the explicit third-party Swift extension
+# helper below, whose sources may intentionally import SDK-backed C modules.
 set_target_properties(pico_standard_link PROPERTIES INTERFACE_COMPILE_OPTIONS "")
 target_compile_options(pico_standard_link INTERFACE "$<$<COMPILE_LANGUAGE:C>:SHELL: -ffunction-sections -fdata-sections>")
 if(TARGET pico_float_pico_vfp)
@@ -155,17 +200,40 @@ target_compile_options(PicoKit PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
     ${CLANG_ARCH_ABI_FLAGS}
     -Xcc -fshort-enums
     -Xfrontend -function-sections
-    -import-bridging-header ${PICOKIT_BRIDGE_DIR}/BridgingHeader.h
-    ${COMPILE_DEFINITIONS}
+    -Xcc -fmodule-map-file=${PICOKIT_BRIDGE_MODULE_MAP}
+    -Xcc -I${PICOKIT_BRIDGE_DIR}
     ${IMPLICIT_INCLUDES}
 >")
 
 add_executable(${PICOKIT_PRODUCT} ${PICOKIT_SOURCES})
 set_target_properties(${PICOKIT_PRODUCT} PROPERTIES LINKER_LANGUAGE CXX)
+# Embedded Swift's runtime archives carry fixed-width enum ABI metadata while
+# the GNU linker defaults to variable-size enums. The C and Swift sides already
+# use the required -fshort-enums ABI; suppress only these known, safe linker
+# diagnostics. Embedded firmware never needs an executable process stack.
+target_link_options(${PICOKIT_PRODUCT} PRIVATE
+    "-Wl,-z,noexecstack"
+    # The SDK runtime initializers are registered through linker sections, so
+    # they have no ordinary undefined reference that would pull their object
+    # files out of PicoKitSDKBridge's static archive. Force one symbol from
+    # each registration object into the final image; this restores the SDK's
+    # clock/reset/vector initialization before USB CDC starts.
+    "LINKER:-u,runtime_init_spin_locks_reset"
+    "LINKER:-u,runtime_init_clocks"
+)
+# The ARM GNU linker emits enum-size ABI diagnostics for Embedded Swift's
+# runtime archives and supports this suppression. The RISC-V linker shipped
+# with the Pico SDK toolchain does not recognize the option, and its ABI does
+# not produce the same diagnostic, so keep it ARM-only.
+if(NOT PICO_PLATFORM STREQUAL "rp2350-riscv")
+    target_link_options(${PICOKIT_PRODUCT} PRIVATE "-Wl,--no-enum-size-warning")
+endif()
 if(PICOKIT_ENABLE_USB)
-    target_compile_definitions(${PICOKIT_PRODUCT} PRIVATE
-        PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1
-        PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
+    target_compile_options(${PICOKIT_PRODUCT} PRIVATE
+        "$<$<COMPILE_LANGUAGE:C>:-DPICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-DPICO_ENABLE_USB_RESET_VIA_BAUD_RATE=1>"
+        "$<$<COMPILE_LANGUAGE:C>:-DPICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-DPICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1>"
     )
 endif()
 target_compile_options(${PICOKIT_PRODUCT} PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:SHELL:
@@ -173,8 +241,10 @@ target_compile_options(${PICOKIT_PRODUCT} PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:S
     -enable-experimental-feature Embedded
     -parse-as-library
     -I ${PICOKIT_SWIFT_MODULE_DIRECTORY}
+    -Xcc -fmodule-map-file=${PICOKIT_BRIDGE_MODULE_MAP}
+    -Xcc -I${PICOKIT_BRIDGE_DIR}
 >")
-target_link_libraries(${PICOKIT_PRODUCT} PRIVATE PicoKit)
+target_link_libraries(${PICOKIT_PRODUCT} PRIVATE PicoKit PicoKitSDKBridge)
 
 # Application-owned interoperability stays outside PicoKit's bridge. C and
 # C++ adapters in Firmware/Interop are compiled into the firmware target, while
@@ -198,7 +268,15 @@ else()
     pico_enable_stdio_usb(${PICOKIT_PRODUCT} 0)
 endif()
 pico_enable_stdio_uart(${PICOKIT_PRODUCT} 0)
+# pico_add_extra_outputs() normally adds PICO_TARGET_NAME through
+# target_compile_definitions(), which would also be forwarded to Swift. Keep
+# the C/C++ metadata definition without making it a Swift conditional flag.
+set(PICO_NO_TARGET_NAME ON)
 pico_add_extra_outputs(${PICOKIT_PRODUCT})
+target_compile_definitions(${PICOKIT_PRODUCT} PRIVATE
+    "$<$<COMPILE_LANGUAGE:C>:PICO_TARGET_NAME=\"${PICOKIT_PRODUCT}\">"
+    "$<$<COMPILE_LANGUAGE:CXX>:PICO_TARGET_NAME=\"${PICOKIT_PRODUCT}\">"
+)
 
 # Add a small, explicit extension point for application dependencies.  A
 # project's Firmware/Dependencies.cmake can use this helper after including

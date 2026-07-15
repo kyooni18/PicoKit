@@ -1,5 +1,7 @@
 #if !PICOKIT_PICO_SDK
 import PicoKitCore
+#else
+import PicoKitSDKBridge
 #endif
 
 public final class USBSerial {
@@ -21,10 +23,11 @@ public final class USBSerial {
 
     /// Writes raw bytes without interpreting them as UTF-8 or a C string.
     public func write(_ bytes: [UInt8]) throws(PicoKitError) {
+        let count = try picoKitTransferCount(bytes.count, operation: "USB serial write")
         #if PICOKIT_PICO_SDK
         guard !bytes.isEmpty else { return }
         bytes.withUnsafeBufferPointer {
-            picokit_stdio_write_bytes($0.baseAddress, UInt32($0.count))
+            picokit_stdio_write_bytes($0.baseAddress, count)
         }
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
@@ -89,6 +92,9 @@ public final class PicoSerial: @unchecked Sendable {
     @inline(__always)
     public func write(_ bytes: [UInt8]) {
         guard !bytes.isEmpty else { return }
+        guard bytes.count <= Int(UInt32.max) else {
+            preconditionFailure("USB serial write exceeds UInt32 transfer capacity")
+        }
         initializeIfNeeded()
         bytes.withUnsafeBufferPointer {
             picokit_stdio_write_bytes($0.baseAddress, UInt32($0.count))
@@ -136,10 +142,10 @@ public final class PicoSerial: @unchecked Sendable {
 /// Concrete firmware facade that preserves typed errors for Embedded Swift.
 @inline(__always)
 private func picoKitSketchPin(_ pin: Int) -> UInt32 {
-    guard pin >= 0 && pin < 30 else {
+    guard let validated = try? PicoPin(pin) else {
         preconditionFailure("GPIO pin \(pin) is outside 0...29")
     }
-    return UInt32(pin)
+    return validated.rawValue
 }
 
 @inline(__always)
@@ -152,10 +158,13 @@ private func picoKitSketchMilliseconds(_ milliseconds: UInt64) -> UInt64 {
 }
 
 public final class Pico: @unchecked Sendable {
-    public let gpio = PicoGPIO()
-    public let serial = PicoSerial()
+    public let gpio: PicoGPIO
+    public let serial: PicoSerial
 
-    public init() {}
+    public init() {
+        self.gpio = PicoGPIO.compiled
+        self.serial = PicoSerial()
+    }
 
     @inline(__always)
     public func pinMode(_ pin: Int, _ mode: PinMode) {

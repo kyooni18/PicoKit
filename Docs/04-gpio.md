@@ -6,11 +6,11 @@
 ### Low-level GPIO
 
 Use this layer when GPIO setup is part of a larger driver or when you need to
-handle an error instead of trapping. Start by creating a controller for the
-target chip:
+handle an error instead of trapping. When one source targets whichever chip
+the firmware build selects, use the inferred controller:
 
 ```swift
-let gpio = PicoGPIO(chip: .rp2350)
+let gpio = PicoGPIO.compiled
 let pin = try PicoPin(15)
 
 try gpio.setMode(pin, mode: .output)
@@ -18,6 +18,9 @@ try gpio.write(pin, state: .high)
 let state = try gpio.read(pin)
 try gpio.toggle(pin)
 ```
+
+Use `PicoGPIO.rp2040` or `PicoGPIO.rp2350` when a driver intentionally names
+its target chip.
 
 If the chip is already known, the static convenience constructors keep that
 setup short:
@@ -103,6 +106,19 @@ let led = try BoardLED(board: .pico2W)
 try led.set(.high)
 try led.toggle()
 ```
+
+When the same source must work with whichever board the firmware build
+selects, use `try BoardLED()` to infer the exact compiled board. The explicit
+initializer remains useful when a driver intentionally declares its target.
+
+`board` records which target the application expects; the actual LED wiring
+and implementation are selected by the firmware build's `PICO_BOARD` setting.
+The constructor rejects declarations whose RP2040/RP2350 chip does not match
+that firmware target, so keep the board declaration aligned when using a
+custom SDK board.
+
+Initialization is shared and safe when more than one `BoardLED` value is
+constructed, although one logical owner is still recommended.
 
 For time, `Clock.now()` returns monotonic microseconds and
 `try Clock.sleep(for: .milliseconds(500))` blocks the current core. Low-level

@@ -71,6 +71,11 @@ struct PicoKitHostTests {
         require(PicoBoard.pico2W.cmakeName == "pico2_w", "CMake board spelling mismatch")
         require(PicoBoard.pico.onboardLED == 25, "Pico LED mismatch")
         require(PicoBoard.picoW.onboardLED == nil, "Pico W should use BoardLED")
+        require(PicoBoard.pico2.onboardLED == 25, "Pico 2 LED mismatch")
+        require(PicoBoard.pico2W.onboardLED == nil, "Pico 2 W should use BoardLED")
+        require(PicoChip.compiled == .rp2040, "host compiled chip default mismatch")
+        require(PicoGPIO.compiled.chip == .rp2040, "host compiled GPIO default mismatch")
+        require(PicoGPIO().chip == .rp2040, "default GPIO chip mismatch")
         require(PicoPin.gpio18.rawValue == 18, "GPIO convenience value mismatch")
 
         for value in 0...29 {
@@ -94,6 +99,66 @@ struct PicoKitHostTests {
         ) {
             _ = try PicoI2C(.i2c0, frequency: busFrequency, sda: .gpio2, scl: .gpio3)
         }
+        requireError(
+            .ownershipConflict("i2c0 SDA and SCL must use different pins"),
+            "I2C accepted one pin for both roles"
+        ) {
+            _ = try PicoI2C(.i2c0, frequency: busFrequency, sda: .gpio0, scl: .gpio0)
+        }
+        requireError(
+            .invalidPeripheralPin(peripheral: "uart0 TX on rp2040", pin: .gpio2),
+            "RP2040 UART0 accepted an invalid TX pin"
+        ) {
+            _ = try PicoUART(.uart0, baudRate: busFrequency, tx: .gpio2, rx: .gpio1)
+        }
+        requireError(
+            .invalidPeripheralPin(peripheral: "uart0 RX on rp2350", pin: .gpio5),
+            "RP2350 UART0 accepted a UART1 RX pin"
+        ) {
+            _ = try PicoUART(.uart0, baudRate: busFrequency, tx: .gpio0, rx: .gpio5, chip: .rp2350)
+        }
+        requireError(
+            .invalidPeripheralPin(peripheral: "uart0 TX on rp2350", pin: .gpio6),
+            "RP2350 UART0 accepted a UART1 CTS pin as TX"
+        ) {
+            _ = try PicoUART(.uart0, baudRate: busFrequency, tx: .gpio6, rx: .gpio1, chip: .rp2350)
+        }
+        requireError(
+            .invalidPeripheralPin(peripheral: "uart1 TX on rp2350", pin: .gpio2),
+            "RP2350 UART1 accepted a UART0 CTS pin as TX"
+        ) {
+            _ = try PicoUART(.uart1, baudRate: busFrequency, tx: .gpio2, rx: .gpio5, chip: .rp2350)
+        }
+        do {
+            _ = try PicoUART(.uart0, baudRate: busFrequency, tx: .gpio2, rx: .gpio3, chip: .rp2350)
+            fatalError("RP2350 UART0 auxiliary TX/RX pair unexpectedly constructed on host")
+        } catch let error {
+            require(error == .unavailable("Pico SDK bridge"), "RP2350 UART0 auxiliary pair was rejected")
+        }
+        do {
+            _ = try PicoUART(.uart1, baudRate: busFrequency, tx: .gpio6, rx: .gpio7, chip: .rp2350)
+            fatalError("RP2350 UART1 auxiliary TX/RX pair unexpectedly constructed on host")
+        } catch let error {
+            require(error == .unavailable("Pico SDK bridge"), "RP2350 UART1 auxiliary pair was rejected")
+        }
+        requireError(
+            .invalidPeripheralPin(peripheral: "spi0 chip-select", pin: .gpio2),
+            "SPI chip-select conflicted with SCK"
+        ) {
+            _ = try PicoSPI(.spi0, frequency: busFrequency, sck: .gpio2, mosi: .gpio3, chipSelect: .gpio2)
+        }
+        requireError(
+            .ownershipConflict("spi0 SCK, MOSI, and MISO must use different pins"),
+            "SPI accepted one pin for multiple data roles"
+        ) {
+            _ = try PicoSPI(.spi0, frequency: busFrequency, sck: .gpio2, mosi: .gpio2, miso: .gpio0)
+        }
+        requireError(
+            .ownershipConflict("uart0 TX and RX must use different pins"),
+            "UART accepted one pin for both roles"
+        ) {
+            _ = try PicoUART(.uart0, baudRate: busFrequency, tx: .gpio0, rx: .gpio0)
+        }
 
         try require(try Frequency.kilohertz(400).hertz == 400_000, "frequency conversion failed")
         try require(try Frequency.megahertz(1).hertz == 1_000_000, "MHz conversion failed")
@@ -108,14 +173,53 @@ struct PicoKitHostTests {
         requireError(.invalidTimeout(UInt64.max), "duration overflow accepted") {
             _ = try Duration.seconds(UInt64.max)
         }
+        try require(
+            try picoKitWatchdogMilliseconds(.microseconds(1)) == 1,
+            "sub-millisecond watchdog timeout was rounded down to zero"
+        )
+        try require(
+            try picoKitWatchdogMilliseconds(.milliseconds(UInt64(UInt32.max))) == UInt32.max,
+            "maximum watchdog timeout was rejected"
+        )
+        requireError(.invalidTimeout(UInt64(UInt32.max) * 1_000 + 1), "watchdog timeout overflow accepted") {
+            _ = try picoKitWatchdogMilliseconds(.microseconds(UInt64(UInt32.max) * 1_000 + 1))
+        }
+        try require(try picoKitADCChannel(for: 26) == .gpio26, "ADC GPIO mapping failed")
+        requireError(.invalidPin(-1), "negative ADC GPIO accepted") {
+            _ = try picoKitADCChannel(for: -1)
+        }
+        requireError(.invalidPin(30), "ADC GPIO30 accepted") {
+            _ = try picoKitADCChannel(for: 30)
+        }
+        requireError(.unavailable("ADC is only available on GPIO26...GPIO29"), "non-ADC GPIO accepted") {
+            _ = try picoKitADCChannel(for: 25)
+        }
+        requireError(.ioFailure(operation: "large transfer", status: -1), "oversized transfer count accepted") {
+            _ = try picoKitTransferCount(Int(Int32.max) + 1, operation: "large transfer")
+        }
 
         require(PinState.low.toggled == .high, "low toggle failed")
         require(PinState.high.toggled == .low, "high toggle failed")
         require(PicoKitError.timedOut(operation: "read").description == "read timed out", "error description failed")
         require(
+            PicoKitError.invalidFrequency(UInt32.max).description ==
+                "frequency \(UInt32.max) Hz is zero, overflows, or is unsupported",
+            "invalid frequency description lost overflow semantics"
+        )
+        require(
+            PicoKitError.invalidTimeout(UInt64.max).description ==
+                "timeout \(UInt64.max) us is zero, overflows, or is unsupported",
+            "invalid timeout description lost overflow semantics"
+        )
+        require(
             PicoKitError.partialTransfer(operation: "SPI write", transferred: 2, expected: 4).description ==
                 "SPI write transferred 2 of 4 elements",
             "partial transfer description failed"
+        )
+        require(
+            PicoKitError.ownershipConflict("i2c0 SDA and SCL must use different pins").description ==
+                "i2c0 SDA and SCL must use different pins",
+            "ownership conflict description added an unrelated ownership suffix"
         )
     }
 
@@ -169,18 +273,58 @@ struct PicoKitHostTests {
             let _: (PicoSerial) -> Bool = { $0.available }
             let _: (USBSerial, Duration) throws -> UInt8 = { try $0.read(timeout: $1) }
             let _: (USBSerial, [UInt8]) throws -> Void = { try $0.write($1) }
+            let _: (PicoUART) throws -> UInt8? = { try $0.read() }
+            let _: (PicoI2C, UInt8, [UInt8], Int, Duration) throws -> [UInt8] = {
+                try $0.writeRead(address: $1, bytes: $2, count: $3, timeout: $4)
+            }
             let _: SPIMode = .mode3
             let _: SPIBitOrder = .leastSignificantBitFirst
             let _: SPIDataBits = .sixteen
+            let _: (PicoI2C, UInt8, [UInt8], Duration, Bool) throws -> Int = {
+                try $0.write(address: $1, bytes: $2, timeout: $3, stop: $4)
+            }
+            let _: (PicoI2C, UInt8, Int, Duration, Bool) throws -> [UInt8] = {
+                try $0.read(address: $1, count: $2, timeout: $3, stop: $4)
+            }
+            let _: (PicoI2C) -> Frequency = { $0.actualFrequency }
+            let _: (BoardLED) -> PicoBoard = { $0.board }
             let _: (PicoGPIO, UInt32) throws -> Void = { try $0.set(mask: $1) }
             let _: (PicoGPIO, UInt32) throws -> Void = { try $0.clear(mask: $1) }
             let _: (PicoGPIO, UInt32) throws -> Void = { try $0.toggle(mask: $1) }
             let _: (PicoSPI, [UInt8]) throws -> Void = { try $0.writeDMA($1) }
+            let _: (PicoSPI, [UInt8], Duration) throws -> Void = { try $0.writeDMA($1, timeout: $2) }
             let _: (PicoSPI, [UInt16]) throws -> Void = { try $0.writeDMA($1) }
+            let _: (PicoSPI, [UInt16], Duration) throws -> Void = { try $0.writeDMA($1, timeout: $2) }
+            let _: (PicoSPI, [UInt8], Duration) throws -> [UInt8] = { try $0.transferDMA($1, timeout: $2) }
+            let _: (PicoSPI, [UInt16], Duration) throws -> [UInt16] = { try $0.transferDMA($1, timeout: $2) }
+            let _: (PicoSPI, [UInt16], Duration) throws -> Void = { try $0.write($1, timeout: $2) }
+            let _: (PicoSPI, Int, UInt8) throws -> [UInt8] = {
+                try $0.read(count: $1, repeatedByte: $2)
+            }
+            let _: (PicoSPI, Int, UInt8, Duration) throws -> [UInt8] = {
+                try $0.read(count: $1, repeatedByte: $2, timeout: $3)
+            }
+            let _: (PicoSPI, Int, UInt16) throws -> [UInt16] = {
+                try $0.read($1, repeatedWord: $2)
+            }
+            let _: (PicoSPI, Int, UInt16, Duration) throws -> [UInt16] = {
+                try $0.read($1, repeatedWord: $2, timeout: $3)
+            }
+            let _: (PicoSPI, [UInt16], Duration) throws -> [UInt16] = {
+                try $0.transfer($1, timeout: $2)
+            }
+            let _: (PicoSPI, [UInt8]) throws -> [UInt8] = { try $0.transferDMA($1) }
+            let _: (PicoSPI, [UInt16]) throws -> [UInt16] = { try $0.transferDMA($1) }
             let _: (PicoUART, [UInt8]) throws -> Void = { try $0.writeDMA($1) }
+            let _: (PicoUART, [UInt8], Duration) throws -> Void = { try $0.writeDMA($1, timeout: $2) }
             let _: (PicoSPI) -> Void = { $0.releaseDMAChannels() }
             let _: (PicoUART) -> Void = { $0.releaseDMAChannel() }
+            let _: (PicoUART) -> PicoChip = { $0.chip }
+            let _: (PicoUART) -> Frequency = { $0.actualBaudRate }
+            let _: (PicoSPI) -> PicoPin? = { $0.miso }
+            let _: (PicoInterrupts, PicoPin) -> Void = { $0.disable($1) }
             let _: (PicoPWM, UInt16) throws -> Void = { try $0.setCounterLevel($1) }
+            let _: (PicoPWM) -> Frequency = { $0.actualFrequency }
             let _: PinPull = .up
             let _: PinDriveStrength = .milliamps12
             let _: PinSlewRate = .fast

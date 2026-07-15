@@ -1,5 +1,7 @@
 #if !PICOKIT_PICO_SDK
 import PicoKitCore
+#else
+import PicoKitSDKBridge
 #endif
 
 public enum PWMChannel: Sendable { case a, b }
@@ -8,6 +10,8 @@ public final class PicoPWM {
     public let pin: PicoPin
     /// The counter's maximum representable level for this configured frequency.
     public let counterTop: UInt16
+    /// The frequency actually produced after clock-divider and wrap quantization.
+    public let actualFrequency: Frequency
     private let slice: UInt32
     private let channel: UInt32
     private let wrap: UInt32
@@ -17,7 +21,10 @@ public final class PicoPWM {
         var slice: UInt32 = 0
         var channel: UInt32 = 0
         var wrap: UInt32 = 0
-        let status = picokit_pwm_init(pin.rawValue, frequency.hertz, &slice, &channel, &wrap)
+        var actualFrequency: UInt32 = 0
+        let status = picokit_pwm_init_with_actual_frequency(
+            pin.rawValue, frequency.hertz, &slice, &channel, &wrap, &actualFrequency
+        )
         guard status == 0 else {
             throw PicoKitError.ioFailure(operation: "PWM setup", status: status)
         }
@@ -26,6 +33,7 @@ public final class PicoPWM {
         self.channel = channel
         self.wrap = wrap
         self.counterTop = UInt16(wrap)
+        self.actualFrequency = try Frequency.hertz(actualFrequency)
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
         #endif
@@ -127,14 +135,18 @@ public func analogRead(_ channel: ADCChannel, using adc: PicoADC) throws(PicoKit
     try adc.read(channel)
 }
 
-public func analogRead(_ pin: Int, using adc: PicoADC) throws(PicoKitError) -> UInt16 {
-    let channel: ADCChannel
-    switch pin {
-    case 26: channel = .gpio26
-    case 27: channel = .gpio27
-    case 28: channel = .gpio28
-    case 29: channel = .gpio29
+@inline(__always)
+func picoKitADCChannel(for pin: Int) throws(PicoKitError) -> ADCChannel {
+    let validated = try PicoPin(pin)
+    switch validated.rawValue {
+    case 26: return .gpio26
+    case 27: return .gpio27
+    case 28: return .gpio28
+    case 29: return .gpio29
     default: throw PicoKitError.unavailable("ADC is only available on GPIO26...GPIO29")
     }
-    return try adc.read(channel)
+}
+
+public func analogRead(_ pin: Int, using adc: PicoADC) throws(PicoKitError) -> UInt16 {
+    try adc.read(picoKitADCChannel(for: pin))
 }

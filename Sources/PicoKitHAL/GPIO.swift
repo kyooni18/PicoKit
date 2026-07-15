@@ -1,6 +1,20 @@
 #if !PICOKIT_PICO_SDK
 import PicoKitCore
+#else
+import PicoKitSDKBridge
 #endif
+
+public extension PicoChip {
+    /// The chip selected by the firmware build. Host builds use RP2040 as
+    /// their validation default.
+    static var compiled: Self {
+        #if PICOKIT_PICO_SDK
+        return picokit_compiled_chip() == 0 ? .rp2040 : .rp2350
+        #else
+        return .rp2040
+        #endif
+    }
+}
 
 /// SDK-backed hardware access. The implementation is compiled only by the
 /// Pico firmware CMake target. Host tests can exercise validation via fakes.
@@ -8,14 +22,31 @@ public final class PicoGPIO: DigitalIO {
     public static var rp2040: PicoGPIO { PicoGPIO(chip: .rp2040) }
     public static var rp2350: PicoGPIO { PicoGPIO(chip: .rp2350) }
 
+    /// Creates a GPIO controller for the chip selected by the firmware build.
+    /// Host builds use RP2040 as their validation default.
+    public static var compiled: PicoGPIO {
+        PicoGPIO(chip: .compiled)
+    }
+
     public let chip: PicoChip
 
-    public init(chip: PicoChip = .rp2040) {
+    public init(chip: PicoChip = .compiled) {
         self.chip = chip
     }
 
+    #if PICOKIT_PICO_SDK
+    @inline(__always)
+    private func validateCompiledChip() throws(PicoKitError) {
+        let compiledChip = picokit_compiled_chip() == 0 ? PicoChip.rp2040 : .rp2350
+        guard chip == compiledChip else {
+            throw PicoKitError.unavailable("GPIO chip does not match compiled Pico chip")
+        }
+    }
+    #endif
+
     public func setMode(_ pin: PicoPin, mode: PinMode) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
+        try validateCompiledChip()
         picokit_gpio_init(pin.rawValue)
         picokit_gpio_set_direction(pin.rawValue, mode == .output ? 1 : 0)
         #else
@@ -32,6 +63,7 @@ public final class PicoGPIO: DigitalIO {
         slewRate: PinSlewRate = .slow
     ) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
+        try validateCompiledChip()
         let status = picokit_gpio_configure(
             pin.rawValue,
             mode == .output ? 1 : 0,
@@ -65,6 +97,7 @@ public final class PicoGPIO: DigitalIO {
 
     public func write(_ pin: PicoPin, state: PinState) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
+        try validateCompiledChip()
         picokit_gpio_write(pin.rawValue, state == .high ? 1 : 0)
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
@@ -73,6 +106,7 @@ public final class PicoGPIO: DigitalIO {
 
     public func read(_ pin: PicoPin) throws(PicoKitError) -> PinState {
         #if PICOKIT_PICO_SDK
+        try validateCompiledChip()
         return picokit_gpio_read(pin.rawValue) == 0 ? .low : .high
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
@@ -81,6 +115,7 @@ public final class PicoGPIO: DigitalIO {
 
     public func toggle(_ pin: PicoPin) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
+        try validateCompiledChip()
         picokit_gpio_toggle(pin.rawValue)
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
@@ -91,6 +126,7 @@ public final class PicoGPIO: DigitalIO {
     /// Bits above GPIO29 are ignored.
     public func set(mask: UInt32) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
+        try validateCompiledChip()
         picokit_gpio_set_mask(mask)
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
@@ -101,6 +137,7 @@ public final class PicoGPIO: DigitalIO {
     /// Bits above GPIO29 are ignored.
     public func clear(mask: UInt32) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
+        try validateCompiledChip()
         picokit_gpio_clear_mask(mask)
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
@@ -111,6 +148,7 @@ public final class PicoGPIO: DigitalIO {
     /// Bits above GPIO29 are ignored.
     public func toggle(mask: UInt32) throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
+        try validateCompiledChip()
         picokit_gpio_toggle_mask(mask)
         #else
         throw PicoKitError.unavailable("Pico SDK bridge")
@@ -134,9 +172,50 @@ public final class PicoGPIO: DigitalIO {
     }
 }
 
+private extension PicoBoard {
+    var picokitCompiledBoardCode: UInt32 {
+        switch self {
+        case .pico: 0
+        case .picoW: 1
+        case .pico2: 2
+        case .pico2W: 3
+        }
+    }
+}
+
 public final class BoardLED {
-    public init(board: PicoBoard) throws(PicoKitError) {
+    /// The board declaration supplied by the application. The concrete LED
+    /// implementation still comes from the firmware target's `PICO_BOARD`.
+    public let board: PicoBoard
+
+    /// Creates a board LED using the exact board selected by the firmware
+    /// build, without hardcoding a Pico board in the application source.
+    public convenience init() throws(PicoKitError) {
         #if PICOKIT_PICO_SDK
+        let board: PicoBoard
+        switch picokit_compiled_board() {
+        case 0: board = .pico
+        case 1: board = .picoW
+        case 2: board = .pico2
+        case 3: board = .pico2W
+        default: throw PicoKitError.unavailable("unknown compiled Pico board")
+        }
+        try self.init(board: board)
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
+    public init(board: PicoBoard) throws(PicoKitError) {
+        self.board = board
+        #if PICOKIT_PICO_SDK
+        let compiledChip = picokit_compiled_chip() == 0 ? PicoChip.rp2040 : .rp2350
+        guard board.chip == compiledChip else {
+            throw PicoKitError.unavailable("BoardLED board does not match compiled Pico chip")
+        }
+        guard picokit_compiled_board() == board.picokitCompiledBoardCode else {
+            throw PicoKitError.unavailable("BoardLED board does not match compiled Pico board")
+        }
         guard picokit_status_led_init() == 0 else {
             throw PicoKitError.unavailable("board status LED")
         }

@@ -1,5 +1,7 @@
 #if !PICOKIT_PICO_SDK
 import PicoKitCore
+#else
+import PicoKitSDKBridge
 #endif
 
 public enum Clock {
@@ -34,4 +36,3 @@ public func delayMicroseconds(_ microseconds: UInt64) throws(PicoKitError) {
 
 public func millis() -> UInt64 { Clock.now() / 1_000 }
 public func micros() -> UInt64 { Clock.now() }
-

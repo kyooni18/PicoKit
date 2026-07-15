@@ -7,7 +7,7 @@ struct Blink {
     static func main() {
         do {
             let serial = try USBSerial()
-            let led = try BoardLED(board: .pico2W)
+            let led = try BoardLED()
             let halfSecond = try Duration.milliseconds(500)
             while true {
                 try led.set(.high)

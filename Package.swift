@@ -12,7 +12,16 @@ let package = Package(
         .target(name: "PicoKitCore"),
         // Layer 2: hardware API. Its SDK implementation is selected only by
         // the firmware CMake build; this target remains host-testable.
-        .target(name: "PicoKitHAL", dependencies: ["PicoKitCore"]),
+        .target(
+            name: "PicoKitHAL",
+            dependencies: ["PicoKitCore"],
+            // PicoKitHostTests intentionally remains an executable so it can
+            // run on the same toolchain as firmware builds. Its validation
+            // covers internal conversion guards that have no hardware-backed
+            // host equivalent; keep those @testable imports working in the
+            // optimized configuration as well.
+            swiftSettings: [.unsafeFlags(["-enable-testing"], .when(configuration: .release))]
+        ),
         // Public umbrella. Firmware imports this product, never a C shim.
         .target(name: "PicoKit", dependencies: ["PicoKitCore", "PicoKitHAL"], path: "Sources/PicoKitFacade"),
         // A Foundation-free host validation executable. Some embedded Swift
