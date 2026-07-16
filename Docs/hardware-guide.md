@@ -131,6 +131,29 @@ Low-level APIs report `PicoKitError`:
 
 `PicoKitError.description` is suitable for logs during board bring-up.
 
+### A useful error-handling pattern
+
+Construct long-lived values once, then keep the recovery decision close to the
+operation that can fail. For example, a timeout can be logged and retried while
+an invalid pin should usually stop configuration:
+
+```swift
+let serial = try USBSerial()
+let gpio = PicoGPIO.compiled
+let input = try PicoPin(15)
+try gpio.setMode(input, mode: .input)
+
+do {
+    if let byte = try serial.read() {
+        try serial.write(byte)
+    }
+} catch PicoKitError.timedOut {
+    // A bounded operation may be retried by application policy.
+} catch {
+    // Record or handle the hardware failure appropriate to this firmware.
+}
+```
+
 ## Sketch facade, GPIO, and time
 
 Use the global helpers for a small fixed sketch:
@@ -154,6 +177,39 @@ For preconfigured groups of pins, `PicoGPIO.set(mask:)`, `clear(mask:)`, and
 `toggle(mask:)` perform one SDK register operation. Bits above GPIO29 are
 ignored. Use PIO or focused C for cycle-exact protocols.
 
+`PicoGPIO.configure` is the lower-level setup form when pull, drive strength,
+slew rate, and initial level all matter. The bridge writes the output latch
+before enabling output direction, avoiding an unwanted low pulse on active-low
+reset or chip-select lines:
+
+```swift
+try gpio.configure(
+    .gpio17,
+    mode: .output,
+    initialState: .high,
+    pull: .none,
+    driveStrength: .milliamps8,
+    slewRate: .fast
+)
+try gpio.resetPulse(.gpio20, activeState: .low, duration: .milliseconds(10))
+```
+
+For host tests, inject a `DigitalIO` implementation rather than branching on
+the platform in the sketch:
+
+```swift
+final class FakeGPIO: DigitalIO {
+    var state: PinState = .low
+    func setMode(_ pin: PicoPin, mode: PinMode) throws {}
+    func write(_ pin: PicoPin, state: PinState) throws { self.state = state }
+    func read(_ pin: PicoPin) throws -> PinState { state }
+}
+
+let app = Pico(gpio: FakeGPIO())
+app.pinMode(7, .output)
+app.digitalWrite(7, .high)
+```
+
 ## Serial and UART
 
 `Serial` is a lazy, non-throwing USB CDC facade. `write` and `print` preserve
@@ -175,6 +231,54 @@ UART1 supports `4/5, 6/7, 8/9, 10/11, 20/21, 22/23, 24/25, 26/27` on
 RP2350. `writeDMA(_:timeout:)` aborts its active channel before reporting a
 timeout; call `releaseDMAChannel()` when DMA is no longer needed.
 
+### USB CDC example
+
+`Serial` preserves bytes, including values that are not valid UTF-8. This makes
+the following a useful bring-up echo without imposing a line protocol:
+
+```swift
+Serial.println("ready")
+while true {
+    if let byte = Serial.read() {
+        Serial.write(byte)
+    }
+}
+```
+
+For a command that must arrive within a bounded time, use `USBSerial` instead:
+
+```swift
+let serial = try USBSerial()
+let command = try serial.read(timeout: .seconds(5))
+try serial.write(command)
+```
+
+`isConnected` is a snapshot, not a delivery guarantee; still handle a failed
+write. PicoKit intentionally provides no line buffer, framing, parity setup,
+or concurrent-access control. Those policies belong to the firmware protocol.
+
+### UART example
+
+Keep UART construction in one owner and reuse it for all I/O:
+
+```swift
+let uart = try PicoUART(
+    .uart0,
+    baudRate: .hertz(115_200),
+    tx: .gpio0,
+    rx: .gpio1,
+    chip: .compiled
+)
+try uart.write(Array("hello\\r\\n".utf8), timeout: .milliseconds(100))
+if let byte = try uart.read() {
+    // Process a currently available byte.
+}
+```
+
+`actualBaudRate` reports the divider-quantized rate selected by the SDK. A
+write that makes partial progress before its deadline reports
+`PicoKitError.partialTransfer`; framing and buffering remain application work.
+
 ## PWM, ADC, I2C, and SPI
 
 Create one `PicoPWM` per output pin. `setDutyCycle` uses the full `UInt16`
@@ -195,6 +299,64 @@ order, and 8/16-bit frame width. `read(count:repeatedByte:)` and
 `writeDMA` and `transferDMA` are synchronous prepared-buffer fast paths;
 call `releaseDMAChannels()` when they are no longer needed.
 
+### PWM and ADC examples
+
+Create PWM once and update only the duty cycle in the loop. `counterTop` tells
+you the maximum hardware counter level for the selected frequency; values above
+it saturate at full duty:
+
+```swift
+let pwm = try PicoPWM(pin: .gpio0, frequency: .kilohertz(1))
+try pwm.setDutyCycle(32_768)
+try pwm.setCounterLevel(pwm.counterTop / 4)
+try analogWrite(0, UInt8(128), using: pwm)
+```
+
+Likewise, reuse an ADC instance for repeated samples:
+
+```swift
+let adc = try PicoADC()
+let sample = try adc.read(.gpio26)
+let temperatureRaw = try adc.read(.temperature)
+```
+
+Raw readings are intentionally not converted to volts or degrees: reference
+voltage, board calibration, and sensor policy differ by application.
+
+### I2C and SPI examples
+
+An I2C register read normally uses a write without STOP followed by a read:
+
+```swift
+let i2c = try PicoI2C(.i2c0, frequency: .kilohertz(400), sda: .gpio4, scl: .gpio5)
+let bytes = try i2c.writeRead(
+    address: 0x3C,
+    bytes: [0x10],
+    count: 4,
+    timeout: .milliseconds(100)
+)
+```
+
+Empty writes and zero-length reads are safe validated no-ops. `actualFrequency`
+reports the divider-quantized bus speed. Keep device-specific register and
+transaction policy in a focused driver above the bus instance.
+
+SPI is full duplex when MISO is present. A typical device-owner sequence is:
+
+```swift
+let spi = try PicoSPI(
+    .spi0, frequency: .megahertz(8), sck: .gpio18, mosi: .gpio19,
+    miso: .gpio16, chipSelect: .gpio17
+)
+try spi.select()
+let identifier = try spi.transfer([0x9F, 0, 0, 0], timeout: .milliseconds(100))
+try spi.deselect()
+```
+
+Use `writeDMA` for a sufficiently large prepared display buffer, not for
+single-byte commands. It reduces CPU work but not a peripheral's clock-limited
+transfer time.
+
 ## Interrupts, ownership, tests, and limits
 
 `PicoInterrupts` records selected edges in the C bridge; foreground Swift
@@ -207,3 +369,24 @@ Give each UART, I2C, SPI, PWM slice, watchdog, and USB state one logical
 owner. Peripheral instances are not thread-safe. Host builds report unavailable
 hardware rather than emulating it. PicoKit has no async scheduler, PIO,
 Wi-Fi/Bluetooth, multicore coordination, or general ownership registry.
+
+### Test and firmware boundaries
+
+Host validation covers value checks, errors, fake GPIO, serial buffering, and
+the public API surface. It does not require a board. Firmware validation builds
+the Embedded Swift target and is the place to verify pin muxing, timing, USB
+enumeration, and physical wiring. Useful in-tree gates are:
+
+```sh
+swift build
+swift run PicoKitHostTests
+sh Tests/api-reference.sh
+sh Tests/docs-consistency.sh
+sh Tests/integration/generated-project.sh
+sh Tests/integration/generated-templates.sh
+```
+
+Set `PICO_HARDWARE_TEST=1` only when a connected board should be flashed and
+byte-echo tested. Hardware events should be processed on foreground Swift code:
+interrupt handlers only accumulate edge flags, and no peripheral instance is
+safe for concurrent use from tasks, cores, or IRQ context.
