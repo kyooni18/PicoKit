@@ -6,7 +6,7 @@ links=$(mktemp)
 raw_links=$(mktemp)
 trap 'rm -f "$links" "$raw_links"' EXIT
 
-for document in "$root/README.md" "$root/Docs/00-README.md"; do
+for document in "$root/README.md" "$root/Docs/README.md"; do
     test -s "$document"
     base=$(dirname "$document")
     if ! rg -o --with-filename '\]\([^)]*' "$document" > "$raw_links"; then

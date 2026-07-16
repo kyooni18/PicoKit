@@ -68,6 +68,15 @@ SDK's matching cross compiler (`arm-none-eabi-gcc` for the standard Pico and
 Pico 2 ARM builds). Run `swiftpico doctor` before chasing build errors—it tells
 you which host-side prerequisite is missing.
 
+## Documentation
+
+The maintained documentation is deliberately compact:
+
+- [Getting started](Docs/getting-started.md)
+- [Hardware guide](Docs/hardware-guide.md)
+- [API reference](Docs/api-reference.md)
+- [Integration and performance](Docs/integration.md)
+
 ## Firmware API
 
 There are two ways to write PicoKit code. The lower-level API uses validated
@@ -125,8 +134,8 @@ while true {
 }
 ```
 
-See [the high-level API guide](Docs/12-high-level-api.md) for complete sketch,
-serial, timing, testing, and low-level comparison examples.
+See [the hardware guide](Docs/hardware-guide.md) for complete sketch, serial,
+timing, testing, and low-level comparison examples.
 
 The same API is available on an explicit `Pico` runtime. This is useful when a
 test or an alternate GPIO implementation should own the runtime:
@@ -257,6 +266,6 @@ physical validation matrix; it is deliberately separate from build validation.
 
 PicoKit firmware projects can fetch C dependencies with CMake and compile
 Embedded Swift package targets through the extension points described in [the
-external-library guide](Docs/13-external-libraries.md). Keep the dependency
+external-library guide](Docs/integration.md). Keep the dependency
 CMake file in the project so the precise targets and source directories linked
 into firmware remain reviewable.

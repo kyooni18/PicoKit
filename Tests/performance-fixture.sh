@@ -3,7 +3,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 fixture="$root/Sources/Performance/main.swift"
-docs="$root/Docs/15-performance.md"
+docs="$root/Docs/integration.md"
 
 test -s "$fixture"
 test -s "$docs"

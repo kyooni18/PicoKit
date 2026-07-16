@@ -2,7 +2,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-reference="$root/Docs/11-api-reference.md"
+reference="$root/Docs/api-reference.md"
 
 command -v jq >/dev/null 2>&1 || {
     echo "jq is required for symbol-graph API coverage" >&2
@@ -48,7 +48,7 @@ sort -u -o "$members" "$members"
 # below still checks overload-sensitive member names and documented conveniences.
 while IFS= read -r symbol; do
     grep -Fq "$symbol" "$reference" || {
-        echo "Docs/11-api-reference.md is missing public type $symbol" >&2
+        echo "Docs/api-reference.md is missing public type $symbol" >&2
         exit 1
     }
 done < "$types"
@@ -62,7 +62,7 @@ while IFS= read -r symbol; do
         gpio[0-9]|gpio1[0-9]|gpio2[0-9]) continue ;;
     esac
     test -z "$symbol" || grep -Fq "$symbol" "$reference" || {
-        echo "Docs/11-api-reference.md is missing public member $symbol" >&2
+        echo "Docs/api-reference.md is missing public member $symbol" >&2
         exit 1
     }
 done < "$members"
@@ -77,7 +77,7 @@ for symbol in \
     sleepMicroseconds releaseDMAChannel releaseDMAChannels
 do
     grep -q "$symbol" "$reference" || {
-        echo "Docs/11-api-reference.md is missing $symbol" >&2
+        echo "Docs/api-reference.md is missing $symbol" >&2
         exit 1
     }
 done
