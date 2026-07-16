@@ -29,9 +29,10 @@ guard tcsetattr(descriptor, TCSANOW, &settings) == 0 else {
 usleep(250_000)
 tcflush(descriptor, TCIOFLUSH)
 
-let expected: [UInt8] = [0x50, 0x69, 0x63, 0x6F, 0x00, 0x7F, 0xFF, 0x0A]
-let written = expected.withUnsafeBytes { write(descriptor, $0.baseAddress, $0.count) }
-guard written == expected.count else {
+let sent: [UInt8] = [0x50, 0x69, 0x63, 0x6F, 0x00, 0x7F, 0xFF, 0x0A]
+let expected: [UInt8] = [0x50, 0x69, 0x63, 0x6F, 0x00, 0x7F, 0xFF, 0x0D, 0x0A]
+let written = sent.withUnsafeBytes { write(descriptor, $0.baseAddress, $0.count) }
+guard written == sent.count else {
     perror("write")
     exit(1)
 }

@@ -207,7 +207,8 @@ supported by the Pico SDK.
 `PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS` defaults to `50` ms and can be set to
 `0` or a larger value to tune terminal settling after CDC enumeration.
 Set `PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON` when the host does not assert DTR;
-the default remains `OFF`.
+the default is `ON`. `Serial.connected` therefore reports USB readiness without
+requiring modem-control changes from the monitor.
 
 Set `PICO_HARDWARE_TEST=1` to additionally flash one detected Pico and verify
 an exact binary USB CDC echo. A board in BOOTSEL mode is flashed even without a

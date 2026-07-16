@@ -160,7 +160,8 @@ positive millisecond bound, or `-1` for the Pico SDK's indefinite wait.
 `PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS` defaults to `50` ms and controls the
 additional settle delay after CDC connection; `0` disables that delay.
 For hosts that enumerate CDC without asserting DTR, set
-`PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON`; the default is `OFF`.
+`PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON`; the default is `ON`. With this option,
+`isConnected` / `connected` indicate USB readiness without requiring DTR.
 
 ## UART and PWM
 

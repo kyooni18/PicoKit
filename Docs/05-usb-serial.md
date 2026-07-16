@@ -94,11 +94,10 @@ SDK's post-connect settle delay. Increase it when a host terminal needs more
 time after CDC enumeration before the first diagnostic output is sent; set it
 to `0` to disable the extra delay.
 
-`PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON` makes `USBSerial.isConnected` and
-`PicoSerial.connected` report the CDC interface as connected once USB is ready,
-without waiting for a terminal to assert DTR. It defaults to `ON` so USB CDC
-works with host tools that open the device without changing modem-control
-signals. Set it to `OFF` when firmware must require DTR explicitly.
+`PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON` lets USB CDC reads and writes work with
+host tools that do not change modem-control signals. It defaults to `ON`, so
+`USBSerial.isConnected` and `PicoSerial.connected` report readiness after USB
+enumeration rather than requiring host DTR.
 
 ### Hardware UART
 
