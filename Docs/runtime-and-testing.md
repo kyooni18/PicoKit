@@ -26,7 +26,7 @@ custom `DigitalIO` implementation:
 
 ```swift
 final class FakeGPIO: DigitalIO {
-    var states: [UInt8: PinState] = [:]
+    var states: [UInt32: PinState] = [:]
 
     func setMode(_ pin: PicoPin, mode: PinMode) throws {}
     func write(_ pin: PicoPin, state: PinState) throws {
