@@ -24,7 +24,7 @@ swift run --build-system native --package-path "$swiftpico" swiftpico init \
 
 source="$project/Sources/SerialEcho/main.swift"
 grep -q 'Serial.read()' "$source"
-grep -Fq 'Serial.write([byte])' "$source"
+grep -Fq 'Serial.write(byte)' "$source"
 grep -Fq '.package(path: "'"$root"'")' "$project/Package.swift"
 grep -Fq '"picoKitPath"' "$project/swiftpico.json"
 grep -Fq 'PicoKit' "$project/swiftpico.json"

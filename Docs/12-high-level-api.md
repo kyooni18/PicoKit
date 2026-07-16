@@ -85,7 +85,7 @@ nonblocking, so a sketch can poll it without stalling its main loop:
 ```swift
 while true {
     if let byte = Serial.read() {
-        Serial.write([byte]) // Echo one exact byte.
+        Serial.write(byte) // Echo one exact byte.
     }
 }
 ```

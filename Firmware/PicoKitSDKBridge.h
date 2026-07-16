@@ -12,6 +12,7 @@ void picokit_stdio_init(void);
 uint32_t picokit_stdio_connected(void);
 void picokit_stdio_write(const char *text);
 void picokit_stdio_write_line(const char *text);
+void picokit_stdio_write_byte(uint8_t byte);
 void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count);
 int32_t picokit_stdio_read(uint8_t *byte, uint64_t timeout_us);
 int32_t picokit_uart_init(uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx);

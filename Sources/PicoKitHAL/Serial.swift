@@ -32,6 +32,15 @@ public final class USBSerial {
         #endif
     }
 
+    /// Writes one raw byte without allocating an array.
+    public func write(_ byte: UInt8) throws(PicoKitError) {
+        #if PICOKIT_PICO_SDK
+        picokit_stdio_write_byte(byte)
+        #else
+        throw PicoKitError.unavailable("Pico SDK bridge")
+        #endif
+    }
+
     /// Writes raw bytes without interpreting them as UTF-8 or a C string.
     public func write(_ bytes: [UInt8]) throws(PicoKitError) {
         let count = try picoKitTransferCount(bytes.count, operation: "USB serial write")
@@ -106,6 +115,12 @@ public final class PicoSerial: @unchecked Sendable {
     public func write(_ text: String) {
         initializeIfNeeded()
         text.withCString { picokit_stdio_write($0) }
+    }
+
+    @inline(__always)
+    public func write(_ byte: UInt8) {
+        initializeIfNeeded()
+        picokit_stdio_write_byte(byte)
     }
 
     @inline(__always)
@@ -276,6 +291,10 @@ public final class PicoSerial: @unchecked Sendable {
 
     public func write(_ bytes: [UInt8]) {
         picoKitUnchecked { try backend.write(bytes) }
+    }
+
+    public func write(_ byte: UInt8) {
+        write([byte])
     }
 
     public func print(_ text: String) { write(text) }

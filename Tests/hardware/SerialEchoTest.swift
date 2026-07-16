@@ -25,6 +25,8 @@ guard tcsetattr(descriptor, TCSANOW, &settings) == 0 else {
     perror("tcsetattr")
     exit(1)
 }
+// macOS can expose the CDC node just before its data endpoints accept traffic.
+usleep(250_000)
 tcflush(descriptor, TCIOFLUSH)
 
 let expected: [UInt8] = [0x50, 0x69, 0x63, 0x6F, 0x00, 0x7F, 0xFF, 0x0A]

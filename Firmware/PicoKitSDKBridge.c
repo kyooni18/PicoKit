@@ -188,7 +188,11 @@ void picokit_stdio_init(void) {
             if (__atomic_compare_exchange_n(
                     &picokit_stdio_initialization_state, &expected, 1, false,
                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                bool initialized = stdio_init_all();
+                // PicoKit's firmware target is USB-CDC-only. Initializing the
+                // concrete driver avoids relying on stdio_init_all's
+                // link-time driver registration, which can be absent when the
+                // SDK lives inside the bridge static archive.
+                bool initialized = stdio_usb_init();
                 __atomic_store_n(
                     &picokit_stdio_initialization_state, initialized ? 2u : 0u,
                     __ATOMIC_RELEASE
@@ -224,6 +228,9 @@ void picokit_stdio_write(const char *text) {
 }
 void picokit_stdio_write_line(const char *text) {
     if (text) stdio_put_string(text, -1, true, true);
+}
+void picokit_stdio_write_byte(uint8_t byte) {
+    stdio_put_string((const char *)&byte, 1, false, false);
 }
 void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count) {
     while (bytes && count) {

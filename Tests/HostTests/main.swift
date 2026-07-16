@@ -262,10 +262,11 @@ struct PicoKitHostTests {
         require(serial.read() == nil, "empty serial input did not return nil")
 
         serial.write([0, 0x7F, 0xFF])
+        serial.write(0x42)
         serial.print("hello")
         serial.println("world")
         serial.println()
-        require(backend.byteWrites == [[0, 0x7F, 0xFF]], "raw serial write changed bytes")
+        require(backend.byteWrites == [[0, 0x7F, 0xFF], [0x42]], "raw serial write changed bytes")
         require(backend.textWrites == ["hello", "world", "\n", "", "\n"], "text serial writes changed")
     }
 
@@ -279,6 +280,7 @@ struct PicoKitHostTests {
             let _: (PicoSerial) -> Bool = { $0.available }
             let _: (USBSerial, Duration) throws -> UInt8 = { try $0.read(timeout: $1) }
             let _: (USBSerial, [UInt8]) throws -> Void = { try $0.write($1) }
+            let _: (USBSerial, UInt8) throws -> Void = { try $0.write($1) }
             let _: (USBSerial) -> Bool = { $0.isConnected }
             let _: (PicoSerial) -> Bool = { $0.connected }
             let _: (PicoUART) throws -> UInt8? = { try $0.read() }

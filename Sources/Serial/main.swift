@@ -8,7 +8,7 @@ struct SerialExample {
 
         while true {
             if let byte = Serial.read() {
-                Serial.write([byte])
+                Serial.write(byte)
             }
         }
     }

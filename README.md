@@ -116,7 +116,7 @@ Serial.println("starting")
 
 while true {
     if let byte = Serial.read() {
-        Serial.write([byte])
+        Serial.write(byte)
     }
     digitalWrite(15, .high)
     sleep(500)

@@ -129,6 +129,7 @@ final class USBSerial {
     init() throws
     var isConnected: Bool { get }
     func write(_ text: String) throws
+    func write(_ byte: UInt8) throws
     func write(_ bytes: [UInt8]) throws
     func read() throws -> UInt8?
     func read(timeout: Duration) throws -> UInt8
@@ -138,6 +139,7 @@ final class PicoSerial {
     init()
     var connected: Bool { get }
     func write(_ text: String)
+    func write(_ byte: UInt8)
     func write(_ bytes: [UInt8])
     func print(_ text: String)
     func println(_ text: String = "")

@@ -105,7 +105,7 @@ if(PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS GREATER 4294967295)
     message(FATAL_ERROR "PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS must fit UInt32")
 endif()
 option(PICOKIT_USB_CONNECTION_WITHOUT_DTR
-    "Treat a ready USB CDC interface as connected without requiring host DTR" OFF)
+    "Treat a ready USB CDC interface as connected without requiring host DTR" ON)
 option(PICOKIT_ENABLE_USB
     "Initialize and link the USB CDC/reset interface for the firmware target" ON)
 # PICOKIT_SOURCE remains the backwards-compatible entry-point hint used by

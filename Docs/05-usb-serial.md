@@ -51,7 +51,7 @@ the next byte internally, so checking it does not consume data:
 ```swift
 while Serial.available {
     if let byte = Serial.read() {
-        Serial.write([byte]) // Exact byte echo, including non-UTF-8 input.
+        Serial.write(byte) // Exact byte echo, including non-UTF-8 input.
     }
 }
 ```
@@ -96,8 +96,9 @@ to `0` to disable the extra delay.
 
 `PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON` makes `USBSerial.isConnected` and
 `PicoSerial.connected` report the CDC interface as connected once USB is ready,
-without waiting for a terminal to assert DTR. It defaults to `OFF` to preserve
-the SDK's normal terminal-open semantics.
+without waiting for a terminal to assert DTR. It defaults to `ON` so USB CDC
+works with host tools that open the device without changing modem-control
+signals. Set it to `OFF` when firmware must require DTR explicitly.
 
 ### Hardware UART
 
