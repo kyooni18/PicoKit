@@ -3,7 +3,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 fixture="$root/Sources/Performance/main.swift"
-docs="$root/Docs/integration.md"
+docs="$root/Docs/performance.md"
 
 test -s "$fixture"
 test -s "$docs"
@@ -17,7 +17,7 @@ for metric in \
     grep -Fq "report(\"$metric\"" "$fixture"
 done
 
-grep -Fq 'Pico 2 W benchmark fixture' "$docs"
-grep -Fq 'emits one CSV record per measurement' "$docs"
+grep -Fq 'Benchmark fixture' "$docs"
+grep -Fq 'emits records in this form' "$docs"
 
 echo "PicoKit performance fixture contract passed"

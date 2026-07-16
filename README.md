@@ -70,12 +70,16 @@ you which host-side prerequisite is missing.
 
 ## Documentation
 
-The maintained documentation is deliberately compact:
+The maintained documentation is organized by workflow and peripheral:
 
 - [Getting started](Docs/getting-started.md)
 - [Hardware guide](Docs/hardware-guide.md)
+- [USB serial and UART](Docs/serial-and-uart.md)
+- [PWM, ADC, I2C, and SPI](Docs/buses-and-analog.md)
+- [Runtime and testing](Docs/runtime-and-testing.md)
+- [External libraries](Docs/external-libraries.md)
+- [Performance](Docs/performance.md)
 - [API reference](Docs/api-reference.md)
-- [Integration and performance](Docs/integration.md)
 
 ## Firmware API
 
