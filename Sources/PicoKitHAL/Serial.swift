@@ -4,6 +4,44 @@
   import PicoKitSDKBridge
 #endif
 
+func picoKitSerialWriteError(status: Int32, operation: String) -> PicoKitError? {
+  #if PICOKIT_PICO_SDK
+    let disconnected = PICOKIT_STDIO_STATUS_DISCONNECTED
+  #else
+    // Kept in lockstep with PicoKitSDKBridge.h and exercised by host tests.
+    let disconnected: Int32 = -2
+  #endif
+  if status == disconnected {
+    return .unavailable("USB serial host is not connected")
+  }
+  if status != 0 { return .ioFailure(operation: operation, status: status) }
+  return nil
+}
+
+func picoKitSerialNoDataStatus() -> Int32 {
+  #if PICOKIT_PICO_SDK
+    return Int32(PICOKIT_STDIO_STATUS_NO_DATA)
+  #else
+    // Kept in lockstep with PicoKitSDKBridge.h and exercised by host tests.
+    return -3
+  #endif
+}
+
+func picoKitSerialReadError(status: Int32, operation: String) -> PicoKitError? {
+  #if PICOKIT_PICO_SDK
+    let disconnected = PICOKIT_STDIO_STATUS_DISCONNECTED
+  #else
+    let disconnected: Int32 = -2
+  #endif
+  if status == disconnected {
+    return .unavailable("USB serial host is not connected")
+  }
+  if status != 0 && status != picoKitSerialNoDataStatus() {
+    return .ioFailure(operation: operation, status: status)
+  }
+  return nil
+}
+
 public final class USBSerial {
   public init() throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
@@ -26,7 +64,10 @@ public final class USBSerial {
 
   public func write(_ text: String) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
-      text.withCString { picokit_stdio_write($0) }
+      let status = text.withCString { picokit_stdio_write($0) }
+      if let error = picoKitSerialWriteError(status: status, operation: "USB serial write") {
+        throw error
+      }
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -35,7 +76,10 @@ public final class USBSerial {
   /// Writes one raw byte without allocating an array.
   public func write(_ byte: UInt8) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
-      picokit_stdio_write_byte(byte)
+      let status = picokit_stdio_write_byte(byte)
+      if let error = picoKitSerialWriteError(status: status, operation: "USB serial write") {
+        throw error
+      }
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -46,8 +90,11 @@ public final class USBSerial {
     let count = try picoKitTransferCount(bytes.count, operation: "USB serial write")
     #if PICOKIT_PICO_SDK
       guard !bytes.isEmpty else { return }
-      bytes.withUnsafeBufferPointer {
+      let status = bytes.withUnsafeBufferPointer {
         picokit_stdio_write_bytes($0.baseAddress, count)
+      }
+      if let error = picoKitSerialWriteError(status: status, operation: "USB serial write") {
+        throw error
       }
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
@@ -59,10 +106,10 @@ public final class USBSerial {
     #if PICOKIT_PICO_SDK
       var byte: UInt8 = 0
       let result = picokit_stdio_read(&byte, 0)
-      if result == -2 { return nil }
-      guard result == 0 else {
-        throw PicoKitError.ioFailure(operation: "USB serial read", status: result)
+      if let error = picoKitSerialReadError(status: result, operation: "USB serial read") {
+        throw error
       }
+      if result == picoKitSerialNoDataStatus() { return nil }
       return byte
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
@@ -74,9 +121,11 @@ public final class USBSerial {
     #if PICOKIT_PICO_SDK
       var byte: UInt8 = 0
       let result = picokit_stdio_read(&byte, timeout.microseconds)
-      if result == -2 { throw PicoKitError.timedOut(operation: "USB serial read") }
-      guard result == 0 else {
-        throw PicoKitError.ioFailure(operation: "USB serial read", status: result)
+      if let error = picoKitSerialReadError(status: result, operation: "USB serial read") {
+        throw error
+      }
+      if result == picoKitSerialNoDataStatus() {
+        throw PicoKitError.timedOut(operation: "USB serial read")
       }
       return byte
     #else
@@ -114,13 +163,13 @@ public final class USBSerial {
     @inline(__always)
     public func write(_ text: String) {
       initializeIfNeeded()
-      text.withCString { picokit_stdio_write($0) }
+      text.withCString { _ = picokit_stdio_write($0) }
     }
 
     @inline(__always)
     public func write(_ byte: UInt8) {
       initializeIfNeeded()
-      picokit_stdio_write_byte(byte)
+      _ = picokit_stdio_write_byte(byte)
     }
 
     @inline(__always)
@@ -131,7 +180,7 @@ public final class USBSerial {
       }
       initializeIfNeeded()
       bytes.withUnsafeBufferPointer {
-        picokit_stdio_write_bytes($0.baseAddress, UInt32($0.count))
+        _ = picokit_stdio_write_bytes($0.baseAddress, UInt32($0.count))
       }
     }
 
@@ -141,7 +190,7 @@ public final class USBSerial {
     @inline(__always)
     public func println(_ text: String = "") {
       initializeIfNeeded()
-      text.withCString { picokit_stdio_write_line($0) }
+      text.withCString { _ = picokit_stdio_write_line($0) }
     }
 
     @inline(__always)
@@ -152,7 +201,9 @@ public final class USBSerial {
       let result = picokit_stdio_read(&byte, 0)
       if result == 0 {
         pendingByte = byte
-      } else if result != -2 {
+      } else if result != PICOKIT_STDIO_STATUS_NO_DATA
+        && result != PICOKIT_STDIO_STATUS_DISCONNECTED
+      {
         preconditionFailure("USB serial read failed: \(result)")
       }
       return pendingByte != nil
@@ -168,18 +219,11 @@ public final class USBSerial {
       var byte: UInt8 = 0
       let result = picokit_stdio_read(&byte, 0)
       if result == 0 { return byte }
-      if result == -2 { return nil }
+      if result == PICOKIT_STDIO_STATUS_NO_DATA
+        || result == PICOKIT_STDIO_STATUS_DISCONNECTED
+      { return nil }
       preconditionFailure("USB serial read failed: \(result)")
     }
-  }
-
-  /// Concrete firmware facade that preserves typed errors for Embedded Swift.
-  @inline(__always)
-  private func picoKitSketchPin(_ pin: Int) -> UInt32 {
-    guard let validated = try? PicoPin(pin) else {
-      preconditionFailure("GPIO pin \(pin) is outside 0...29")
-    }
-    return validated.rawValue
   }
 
   @inline(__always)
@@ -191,6 +235,8 @@ public final class USBSerial {
     return result.partialValue
   }
 
+  /// Nonthrowing global convenience API. The unchecked conformance permits
+  /// global storage; callers must still keep hardware access single-owner.
   public final class Pico: @unchecked Sendable {
     public let gpio: PicoGPIO
     public let serial: PicoSerial
@@ -202,25 +248,23 @@ public final class USBSerial {
 
     @inline(__always)
     public func pinMode(_ pin: Int, _ mode: PinMode) {
-      let rawPin = picoKitSketchPin(pin)
-      picokit_gpio_init(rawPin)
-      picokit_gpio_set_direction(rawPin, mode == .output ? 1 : 0)
+      try! gpio.pinMode(pin, mode)
     }
 
     @inline(__always)
     public func digitalWrite(_ pin: Int, _ state: PinState) {
-      picokit_gpio_write(picoKitSketchPin(pin), state == .high ? 1 : 0)
+      try! gpio.digitalWrite(pin, state)
     }
 
     @inline(__always)
     public func digitalRead(_ pin: Int) -> PinState {
-      picokit_gpio_read(picoKitSketchPin(pin)) == 0 ? .low : .high
+      try! gpio.digitalRead(pin)
     }
 
     /// Atomically flips one GPIO output without a read-modify-write cycle.
     @inline(__always)
     public func digitalToggle(_ pin: Int) {
-      picokit_gpio_toggle(picoKitSketchPin(pin))
+      try! gpio.digitalToggle(pin)
     }
 
     @inline(__always)
@@ -322,6 +366,7 @@ public final class USBSerial {
   }
 
   /// A small, non-throwing facade over the low-level PicoKit peripherals.
+  /// The unchecked conformance permits global storage, not concurrent access.
   public final class Pico: @unchecked Sendable {
     public let gpio: any DigitalIO
     public let serial: PicoSerial

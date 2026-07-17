@@ -25,6 +25,8 @@ grep -Fq 'PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS must fit UInt32' "$root/Firmware/C
 grep -Fq 'PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS' "$root/Firmware/CMakeLists.txt"
 grep -Fq 'PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS must fit UInt32' "$root/Firmware/CMakeLists.txt"
 grep -Fq 'PICOKIT_USB_CONNECTION_WITHOUT_DTR' "$root/Firmware/CMakeLists.txt"
+grep -Fq '"Treat a ready USB CDC interface as connected without requiring host DTR" OFF)' \
+    "$root/Firmware/CMakeLists.txt"
 grep -Fq 'picokit_initialize_usb_stdio' "$script"
 test -x "$root/Tests/integration/direct-cmake.sh"
 test -x "$root/Tests/integration/compiler-discovery.sh"

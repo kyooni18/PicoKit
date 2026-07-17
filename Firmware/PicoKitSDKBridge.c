@@ -177,6 +177,7 @@ static uint64_t picokit_deadline_after(uint64_t timeout_us) {
     return UINT64_MAX - now < timeout_us ? UINT64_MAX : now + timeout_us;
 }
 void picokit_stdio_init(void) {
+#if PICOKIT_ENABLE_USB
     // stdio_usb_init claims an IRQ and installs handlers, so it must run only
     // once even when an application constructs several USBSerial values. The
     // atomic state also prevents two cores from racing through initialization.
@@ -202,6 +203,7 @@ void picokit_stdio_init(void) {
         }
         tight_loop_contents();
     }
+#endif
 }
 
 #if PICOKIT_ENABLE_USB
@@ -223,41 +225,61 @@ uint32_t picokit_stdio_connected(void) {
 #endif
 }
 
-void picokit_stdio_write(const char *text) {
-    if (text) stdio_put_string(text, -1, false, true);
+int32_t picokit_stdio_write(const char *text) {
+    if (!text) return PICOKIT_STDIO_STATUS_INVALID_ARGUMENT;
+    if (!picokit_stdio_connected()) return PICOKIT_STDIO_STATUS_DISCONNECTED;
+    stdio_put_string(text, -1, false, true);
+    return PICOKIT_STDIO_STATUS_OK;
 }
-void picokit_stdio_write_line(const char *text) {
-    if (text) stdio_put_string(text, -1, true, true);
+int32_t picokit_stdio_write_line(const char *text) {
+    if (!text) return PICOKIT_STDIO_STATUS_INVALID_ARGUMENT;
+    if (!picokit_stdio_connected()) return PICOKIT_STDIO_STATUS_DISCONNECTED;
+    stdio_put_string(text, -1, true, true);
+    // A completed line is an application-level record. Drain the USB CDC
+    // driver here so a following line cannot overtake or displace it when
+    // firmware emits a short burst of records.
+    stdio_flush();
+    return PICOKIT_STDIO_STATUS_OK;
 }
-void picokit_stdio_write_byte(uint8_t byte) {
+int32_t picokit_stdio_write_byte(uint8_t byte) {
+    if (!picokit_stdio_connected()) return PICOKIT_STDIO_STATUS_DISCONNECTED;
     stdio_put_string((const char *)&byte, 1, false, false);
+    return PICOKIT_STDIO_STATUS_OK;
 }
-void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count) {
+int32_t picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count) {
+    if (!count) return PICOKIT_STDIO_STATUS_OK;
+    if (!bytes) return PICOKIT_STDIO_STATUS_INVALID_ARGUMENT;
     while (bytes && count) {
+        if (!picokit_stdio_connected()) return PICOKIT_STDIO_STATUS_DISCONNECTED;
         uint32_t chunk = count > (uint32_t)INT_MAX ? (uint32_t)INT_MAX : count;
         stdio_put_string((const char *)bytes, (int)chunk, false, false);
         bytes += chunk;
         count -= chunk;
     }
+    return PICOKIT_STDIO_STATUS_OK;
 }
 int32_t picokit_stdio_read(uint8_t *byte, uint64_t timeout_us) {
-    if (!byte) return -1;
+    if (!byte) return PICOKIT_STDIO_STATUS_INVALID_ARGUMENT;
+    if (!picokit_stdio_connected()) return PICOKIT_STDIO_STATUS_DISCONNECTED;
 
     // The SDK accepts a UInt32 timeout while PicoKit's Duration is UInt64.
-    // Read in bounded slices so long Swift timeouts retain their full meaning.
+    // Read in short bounded slices so long Swift timeouts retain their full
+    // meaning while a host disconnect is still noticed promptly.
+    const uint32_t poll_slice_us = 10000;
     uint64_t now = time_us_64();
     uint64_t deadline = picokit_deadline_after(timeout_us);
     do {
+        if (!picokit_stdio_connected()) return PICOKIT_STDIO_STATUS_DISCONNECTED;
         now = time_us_64();
         uint64_t remaining = deadline > now ? deadline - now : 0;
-        uint32_t slice = remaining > UINT32_MAX ? UINT32_MAX : (uint32_t)remaining;
+        uint32_t slice = remaining > poll_slice_us ? poll_slice_us : (uint32_t)remaining;
         int result = stdio_getchar_timeout_us(slice);
         if (result >= 0) {
             *byte = (uint8_t)result;
-            return 0;
+            return PICOKIT_STDIO_STATUS_OK;
         }
         if (result != PICO_ERROR_TIMEOUT && result != PICO_ERROR_NO_DATA) return result;
-        if (timeout_us == 0 || picokit_expired(deadline)) return -2;
+        if (timeout_us == 0 || picokit_expired(deadline)) return PICOKIT_STDIO_STATUS_NO_DATA;
     } while (true);
 }
 static uart_inst_t *picokit_uart(uint32_t instance) { return instance == 0 ? uart0 : instance == 1 ? uart1 : NULL; }
@@ -412,36 +434,6 @@ int32_t picokit_status_led_init(void) {
 }
 void picokit_status_led_write(uint32_t value) { status_led_set_state(value != 0); }
 void picokit_status_led_toggle(void) { status_led_set_state(!status_led_get_state()); }
-
-void picokit_gpio_init(uint32_t pin) { if (picokit_valid_gpio(pin)) gpio_init(pin); }
-void picokit_gpio_set_direction(uint32_t pin, uint32_t output) {
-    if (picokit_valid_gpio(pin)) gpio_set_dir(pin, output != 0);
-}
-void picokit_gpio_write(uint32_t pin, uint32_t value) {
-    if (picokit_valid_gpio(pin)) gpio_put(pin, value != 0);
-}
-uint32_t picokit_gpio_read(uint32_t pin) {
-    return picokit_valid_gpio(pin) && gpio_get(pin) ? 1u : 0u;
-}
-void picokit_gpio_toggle(uint32_t pin) {
-    if (picokit_valid_gpio(pin)) gpio_xor_mask(1u << pin);
-}
-void picokit_gpio_set_mask(uint32_t mask) { gpio_set_mask(mask & PICOKIT_GPIO_MASK); }
-void picokit_gpio_clear_mask(uint32_t mask) { gpio_clr_mask(mask & PICOKIT_GPIO_MASK); }
-void picokit_gpio_toggle_mask(uint32_t mask) { gpio_xor_mask(mask & PICOKIT_GPIO_MASK); }
-int32_t picokit_gpio_configure(uint32_t pin, uint32_t output, uint32_t initial_value,
-                               uint32_t pull, uint32_t drive, uint32_t slew) {
-    if (!picokit_valid_gpio(pin) || pull > 2 || drive > 3 || slew > 1) return -1;
-    gpio_init(pin);
-    // Program the output latch before enabling output to prevent a transient
-    // opposite level on reset, chip-select, and backlight pins.
-    gpio_put(pin, initial_value != 0);
-    gpio_set_pulls(pin, pull == 1, pull == 2);
-    gpio_set_drive_strength(pin, (enum gpio_drive_strength)drive);
-    gpio_set_slew_rate(pin, (enum gpio_slew_rate)slew);
-    gpio_set_dir(pin, output != 0);
-    return 0;
-}
 
 uint64_t picokit_time_us(void) { return time_us_64(); }
 void picokit_sleep_us(uint64_t microseconds) { sleep_us(microseconds); }

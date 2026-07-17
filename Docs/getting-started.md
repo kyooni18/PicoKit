@@ -47,7 +47,8 @@ monitor commands live in the separate
 | Pico 2 | `pico2` | RP2350 |
 | Pico 2 W | `pico2_w` | RP2350 |
 
-`pico-w` and `pico2-w` are accepted configuration aliases. Use `BoardLED`
+Configuration names are case-insensitive and trim surrounding whitespace;
+`pico-w` and `pico2-w` are accepted aliases. Use `BoardLED`
 for an onboard LED: unlike a fixed GPIO25 assumption, it uses the SDK's
 board-aware status-LED support.
 
@@ -152,7 +153,6 @@ import PicoKit
 struct Blink {
     static func main() {
         pinMode(15, .output)
-        Serial.println("Blink started")
         while true {
             digitalWrite(15, .high)
             sleep(500)

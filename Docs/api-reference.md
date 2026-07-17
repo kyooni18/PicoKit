@@ -15,7 +15,7 @@ SwiftPM build unless noted otherwise.
 | API | Surface | Notes |
 |---|---|---|
 | `PicoChip` | `.rp2040`, `.rp2350`, `.compiled` | Chip family; `.compiled` follows the firmware target and uses RP2040 on host builds. |
-| `PicoBoard` | `.pico`, `.picoW`, `.pico2`, `.pico2W` | `compiled`, `chip`, `cmakeName`, `onboardLEDPin`, `onboardLED`, and `init?(configurationName:)`. Configuration also accepts `pico-w` and `pico2-w`; `compiled` is optional for custom boards. |
+| `PicoBoard` | `.pico`, `.picoW`, `.pico2`, `.pico2W` | `compiled`, `chip`, `cmakeName`, `isWireless`, `onboardLEDPin`, `onboardLED`, and `init?(configurationName:)`. Configuration trims surrounding whitespace, is case-insensitive, and accepts `pico-w` and `pico2-w`; `compiled` is optional for custom boards. |
 | `PicoKitError` | `invalidPin`, `invalidPeripheralPin`, `invalidFrequency`, `invalidTimeout`, `invalidAddress`, `unavailable`, `timedOut`, `partialTransfer`, `ioFailure`, `ownershipConflict` | All throwing APIs use this error type. `description` is public. |
 | `PicoPin` | `init(_:) throws`, `init?(rawValue:)`, `.gpio0` ... `.gpio29` | GPIO `0...29`; exposes `rawValue` and `description`; comparable. |
 | `Duration` | `.microseconds(_)`, `.milliseconds(_)`, `.seconds(_)` | Positive duration factories; exposes `microseconds`; comparable. |
@@ -52,10 +52,13 @@ final class PicoGPIO: DigitalIO {
     let chip: PicoChip
     init(chip: PicoChip = .compiled)
     func setMode(_ pin: PicoPin, mode: PinMode) throws
-    func configure(_ pin: PicoPin, mode: PinMode, initialState: PinState,
-                   pull: PinPull, driveStrength: PinDriveStrength,
-                   slewRate: PinSlewRate) throws
-    func resetPulse(_ pin: PicoPin, activeState: PinState, duration: Duration) throws
+    func configure(_ pin: PicoPin, mode: PinMode,
+                   initialState: PinState = .low,
+                   pull: PinPull = .none,
+                   driveStrength: PinDriveStrength = .milliamps4,
+                   slewRate: PinSlewRate = .slow) throws
+    func resetPulse(_ pin: PicoPin, activeState: PinState = .low,
+                    duration: Duration) throws
     func write(_ pin: PicoPin, state: PinState) throws
     func read(_ pin: PicoPin) throws -> PinState
     func toggle(_ pin: PicoPin) throws
@@ -151,16 +154,19 @@ let Serial: PicoSerial
 ```
 
 Create `USBSerial` once when errors must be handled. Its nonblocking `read()`
-returns `nil` when no byte is waiting; its timeout overload throws
-`PicoKitError.timedOut`. `Serial.available` and `Serial.read()` are the
-non-throwing sketch form. `available` retains one lookahead byte, so testing it
-does not discard input. Byte-array writes preserve NUL and non-UTF-8 data. The
+returns `nil` when a connected host has no byte waiting; it throws
+`PicoKitError.unavailable("USB serial host is not connected")` when the host is
+disconnected. Its timeout overload throws `PicoKitError.timedOut` for an
+empty connected FIFO and the same unavailable error when the host disconnects
+while waiting. `Serial.available` and `Serial.read()` are the non-throwing
+sketch form. `available` retains one lookahead byte, so testing it does not
+discard input. Byte-array writes preserve NUL and non-UTF-8 data. The
 CMake option `PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS` accepts `0` (no wait), a
 positive millisecond bound, or `-1` for the Pico SDK's indefinite wait.
 `PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS` defaults to `50` ms and controls the
 additional settle delay after CDC connection; `0` disables that delay.
 For hosts that enumerate CDC without asserting DTR, set
-`PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON`; the default is `ON`. With this option,
+`PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON`; the default is `OFF`. With this option,
 `isConnected` / `connected` indicate USB readiness without requiring DTR.
 
 ## UART and PWM
@@ -288,6 +294,10 @@ final class PicoSPI {
     func transfer(_ words: [UInt16], timeout: Duration) throws -> [UInt16]
 }
 ```
+
+`Pico` is stored globally and has an implementation-only `@unchecked
+Sendable` conformance. It provides no locking: keep the facade and each
+underlying hardware resource on one task or core.
 
 When `chipSelect` is supplied without `gpio`, firmware creates the GPIO
 controller for the compiled RP2040 or RP2350 target. Pass `gpio` explicitly

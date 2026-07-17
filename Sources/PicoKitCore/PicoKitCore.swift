@@ -11,15 +11,23 @@ public enum PicoBoard: String, CaseIterable, Sendable {
   case pico2
   case pico2W = "pico2_w"
 
+  /// The MCU family used by this board.
   public var chip: PicoChip { self == .pico || self == .picoW ? .rp2040 : .rp2350 }
+  /// The exact board identifier expected by the Pico SDK's CMake setup.
   public var cmakeName: String { rawValue }
+  /// Whether the board variant includes the onboard wireless radio.
+  public var isWireless: Bool { self == .picoW || self == .pico2W }
+  /// The GPIO-backed onboard LED pin, or `nil` for boards with SDK status LEDs.
   public var onboardLEDPin: PicoPin? { self == .pico || self == .pico2 ? try? PicoPin(25) : nil }
   /// Compatibility value for code that stores a board LED as an integer.
   public var onboardLED: Int? { onboardLEDPin.map { Int($0.rawValue) } }
 
   /// Accept historical spellings only while decoding configuration.
   public init?(configurationName: String) {
-    switch configurationName.lowercased() {
+    var normalized = configurationName
+    while normalized.first?.isWhitespace == true { normalized.removeFirst() }
+    while normalized.last?.isWhitespace == true { normalized.removeLast() }
+    switch normalized.lowercased() {
     case "pico": self = .pico
     case "pico_w", "pico-w": self = .picoW
     case "pico2": self = .pico2

@@ -11,6 +11,7 @@ Global helpers use a default `pico` runtime:
 ```swift
 pinMode(15, .output)
 digitalWrite(15, .high)
+while !Serial.connected { sleep(10) }
 Serial.println("ready")
 sleep(500)
 ```
@@ -51,6 +52,9 @@ watchdog, DMA channel set, or shared USB stdio state.
 Peripheral objects do not provide synchronization. `Pico` and `PicoSerial`
 being `@unchecked Sendable` allows embedded compilation; it does not make the
 hardware safe for concurrent access from tasks, cores, or interrupt handlers.
+`PicoGPIO` deliberately has no `Sendable` conformance. Its write and toggle
+operations use atomic SDK registers, but configuration and reset pulses remain
+single-owner sequences.
 
 ## Interrupt model
 
@@ -107,17 +111,35 @@ Use the smallest relevant gate first, then widen before publishing:
 ```sh
 swift build
 swift run PicoKitHostTests
+sh Tests/gpio-facade-host.sh
 sh Tests/api-reference.sh
 sh Tests/docs-links.sh
 sh Tests/docs-consistency.sh
 sh Tests/integration/generated-project.sh
 sh Tests/integration/generated-templates.sh
+sh Tests/integration/usb-serial-status-firmware.sh
 ```
+
+`PicoKitHostTests` is an executable validation target rather than an XCTest
+target; this keeps the checks Foundation-free for embedded Swift toolchains.
+
+`gpio-facade-host.sh` compiles the dedicated GPIO C facade against a fake Pico
+SDK. It verifies invalid calls do not touch hardware and checks the exact order
+of configuration, masked writes, reads, toggles, and reset pulses.
+The firmware integration gates build the bridge for both RP2040 and RP2350 and
+check that the expected GPIO facade symbols are linked. `gpio-facade-size.sh`
+is an additional opt-in regression checker for a firmware ELF that includes
+the facade; pass that ELF explicitly when enforcing its per-symbol size caps.
 
 Other integration gates cover direct CMake discovery, USB-disabled builds,
 compiler overrides, board aliases, and CMake option bounds. Set
 `PICO_HARDWARE_TEST=1` only when the run is allowed to flash a detected board
 and verify binary USB CDC echo. Select the family with `PICO_TEST_BOARD`.
+
+`usb-serial-status-firmware.sh` compiles a probe for both MCU families. On
+hardware, the same fixture records whether a write before DTR produced the
+documented disconnected error, reports a connected write, and then provides a
+raw byte echo for NUL-inclusive acceptance testing.
 
 ## Deliberate limits
 

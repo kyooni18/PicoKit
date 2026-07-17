@@ -66,4 +66,16 @@ grep -Fq 'PicoKit USB CDC connect wait: -1 ms' "$indefinite_log"
 grep -Fq 'PicoKit USB CDC post-connect delay: 75 ms' "$indefinite_log"
 grep -Fq 'PicoKit USB CDC connection check: DTR-independent' "$indefinite_log"
 
+# The default must require an opened CDC session. Treating enumeration alone
+# as connected lets firmware silently discard output before a monitor opens.
+dtr_build="$tmp/connect-default"
+dtr_log="$tmp/connect-default.log"
+cmake -S "$root/Firmware" -B "$dtr_build" -G Ninja \
+    -DPICOKIT_ROOT="$root" \
+    -DPICOKIT_PRODUCT="CMakeOptionProbe" \
+    -DPICOKIT_SOURCE="$root/Sources/Blink/main.swift" \
+    -DPICO_BOARD=pico \
+    -DPICOKIT_ENABLE_USB=ON >"$dtr_log" 2>&1
+grep -Fq 'PicoKit USB CDC connection check: DTR-dependent' "$dtr_log"
+
 echo "PicoKit CMake USB option validation passed"

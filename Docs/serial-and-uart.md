@@ -11,11 +11,18 @@ The global `Serial` value initializes USB stdio lazily. It is convenient for
 fixed firmware where a configuration failure should stop execution:
 
 ```swift
+while !Serial.connected { sleep(10) }
 Serial.write("booting")
 Serial.print(" mode=")
 Serial.println("diagnostic")
 Serial.println()
 ```
+
+The default connection check requires DTR, so `connected` becomes true when
+`swiftpico monitor` has opened the CDC device. Wait before one-shot startup
+messages; otherwise an early write is intentionally discarded rather than
+blocking firmware indefinitely. Periodic diagnostics can instead check
+`Serial.connected` and skip output while no monitor is attached.
 
 `write` and `print` do not append a newline. `println` does. Byte overloads
 preserve NUL and non-UTF-8 data, so a raw echo loop is straightforward:
@@ -49,9 +56,19 @@ do {
 }
 ```
 
+Every throwing `write` overload checks the CDC connection before entering the
+SDK output path. If no DTR-connected host is present, it throws
+`PicoKitError.unavailable("USB serial host is not connected")`; empty byte
+arrays remain successful no-ops. A disconnect can still race a successful
+snapshot, so application protocols should use acknowledgements when delivery
+itself must be proven.
+
 The unbounded `read()` overload is actually a nonblocking poll and returns
-`nil` when no byte is waiting. `isConnected` is a point-in-time USB readiness
-check, not a guarantee that the following write will succeed.
+`nil` when a connected host has not sent a byte. Both read overloads throw
+`PicoKitError.unavailable("USB serial host is not connected")` if no host is
+connected or if it disconnects while a timed read is waiting. Timed reads poll
+the connection at least every 10 milliseconds. `isConnected` is a point-in-time
+USB readiness check, not a guarantee that the following operation will succeed.
 
 ## Startup and connection options
 
@@ -62,7 +79,7 @@ USB CDC startup is controlled by CMake cache values:
 | `PICOKIT_ENABLE_USB` | `ON` | Include USB stdio support. |
 | `PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS` | `0` | Do not wait; positive values bound the wait; `-1` waits indefinitely. |
 | `PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS` | `50` | Extra settling time after connection; `0` disables it. |
-| `PICOKIT_USB_CONNECTION_WITHOUT_DTR` | `ON` | Treat USB enumeration as ready without requiring host DTR. |
+| `PICOKIT_USB_CONNECTION_WITHOUT_DTR` | `OFF` | Treat USB enumeration as ready without requiring host DTR. Enable only for hosts that do not assert DTR. |
 | `PICOKIT_USB_STDOUT_TIMEOUT_US` | `10000` | Bound individual USB diagnostic writes. |
 
 Avoid an indefinite startup wait in unattended firmware. A bounded wait can

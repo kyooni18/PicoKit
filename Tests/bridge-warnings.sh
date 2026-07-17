@@ -32,6 +32,10 @@ test -n "$on_command"
 printf '%s\n' "$on_command" > "$tmp/on-command"
 grep -F -- '-fanalyzer' "$tmp/on-command" >/dev/null
 grep -F -- '-Werror' "$tmp/on-command" >/dev/null
+gpio_on_command=$(ninja -C "$tmp/build" -t commands PicoKitSDKBridge \
+    | awk '/PicoKitGPIOFacade\.c$/ { print; exit }')
+test -n "$gpio_on_command"
+printf '%s\n' "$gpio_on_command" | grep -F -- '-Werror' >/dev/null
 if ! cmake --build "$tmp/build" --target PicoKitSDKBridge >"$build_log" 2>&1; then
     cat "$build_log" >&2
     exit 1

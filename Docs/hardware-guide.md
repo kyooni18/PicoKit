@@ -23,7 +23,13 @@ public enum PicoBoard {
     case picoW
     case pico2
     case pico2W
-    static var compiled: PicoBoard? { get }
+    public static var compiled: PicoBoard? { get }
+    public var chip: PicoChip { get }
+    public var cmakeName: String { get }
+    public var isWireless: Bool { get }
+    public var onboardLEDPin: PicoPin? { get }
+    public var onboardLED: Int? { get }
+    public init?(configurationName: String)
 }
 ```
 
@@ -32,6 +38,7 @@ The properties you will reach for most often are:
 ```swift
 board.chip
 board.cmakeName
+board.isWireless
 board.onboardLEDPin
 board.onboardLED
 ```
@@ -39,6 +46,9 @@ board.onboardLED
 Use `init?(configurationName:)` when a board name comes from configuration or a
 command line. It accepts the canonical spellings and the historical hyphenated
 aliases.
+
+Configuration matching trims surrounding whitespace and is case-insensitive,
+so values such as ` PICO2_W\n` are accepted as well.
 
 `PicoBoard.compiled` reports the exact board selected by firmware's
 `PICO_BOARD`. It is `nil` for a custom board that PicoKit does not recognize;
@@ -173,9 +183,35 @@ hardware errors must be handled. `Pico(gpio:)` accepts a `DigitalIO` fake for
 host tests. `BoardLED()` uses board-aware SDK status-LED support. Blocking
 delays must not be called from an interrupt handler.
 
+For code that explicitly records its target board, keep the declaration next to
+the LED setup so a mismatched firmware configuration fails immediately:
+
+```swift
+func blinkLED(for board: PicoBoard) throws {
+    let led = try BoardLED(board: board)
+    try led.set(.high)
+    try led.toggle()
+}
+```
+
+The wireless variants (`.picoW` and `.pico2W`) do not expose a GPIO-number LED;
+`BoardLED` uses the board's SDK status-LED implementation instead.
+
 For preconfigured groups of pins, `PicoGPIO.set(mask:)`, `clear(mask:)`, and
 `toggle(mask:)` perform one SDK register operation. Bits above GPIO29 are
 ignored. Use PIO or focused C for cycle-exact protocols.
+
+`PicoGPIO` is intentionally a thin Swift API over PicoKit's operation-level C
+facade. Chip matching, argument validation, glitch-free configuration, atomic
+mask updates, and reset-pulse sequencing execute on the C side. Application
+code and the Arduino-style `Pico` convenience API both use this same path.
+
+Single-pin writes and toggles and the three mask operations use the SDK's
+atomic set, clear, or XOR register paths, so they do not perform a lossy
+read-modify-write. This does not make a `PicoGPIO` controller concurrently
+usable: configuration and reset pulses are multi-step sequences. Keep one
+logical owner per pin and do not operate the same controller from multiple
+tasks, cores, or interrupt handlers.
 
 `PicoGPIO.configure` is the lower-level setup form when pull, drive strength,
 slew rate, and initial level all matter. The bridge writes the output latch
@@ -221,8 +257,10 @@ Use `./swiftpico monitor --reconnect` for an interactive CDC terminal. The
 CMake option `PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS` is `0` by default, accepts a
 positive millisecond bound, and accepts `-1` for an indefinite wait.
 `PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS` defaults to `50` ms for an additional settle delay.
-`PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON` is the default, so CDC readiness does
-not require a host to assert DTR.
+`PICOKIT_USB_CONNECTION_WITHOUT_DTR=OFF` is the default, so connection probes
+and writes wait for the host to open CDC and assert DTR. Enable the option only
+for a host that opens CDC without asserting DTR; USB enumeration and the
+1200-baud reset path remain available either way.
 
 `PicoUART` owns one UART controller, explicit TX/RX pins, and a baud rate.
 Polling `read()` returns `nil` for an empty FIFO; bounded reads and writes use
@@ -237,6 +275,7 @@ timeout; call `releaseDMAChannel()` when DMA is no longer needed.
 the following a useful bring-up echo without imposing a line protocol:
 
 ```swift
+while !Serial.connected { sleep(10) }
 Serial.println("ready")
 while true {
     if let byte = Serial.read() {
@@ -245,7 +284,13 @@ while true {
 }
 ```
 
-For a command that must arrive within a bounded time, use `USBSerial` instead:
+With the default DTR-dependent connection check, waiting for `connected`
+prevents the one-shot readiness line from being discarded before a monitor
+opens the CDC device.
+
+For a command that must arrive within a bounded time, use `USBSerial` instead.
+An empty connected FIFO throws `PicoKitError.timedOut`; a disconnected host
+throws `PicoKitError.unavailable("USB serial host is not connected")`:
 
 ```swift
 let serial = try USBSerial()

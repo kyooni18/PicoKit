@@ -160,10 +160,14 @@ with one operation; PWM and repeated ADC reads reuse setup metadata; DMA lowers
 per-byte CPU work but SPI clock or UART baud can still limit wall time. Use PIO
 or focused C for cycle-critical waveforms and continuous capture.
 
-`Sources/Performance/main.swift` is a Pico 2 W benchmark fixture. It emits one CSV record per measurement
+`Sources/Performance/main.swift` is a benchmark fixture for every supported Pico board. It emits one CSV record per measurement
 (`metric,iterations,elapsed_us,check`) for CPU,
 GPIO, PWM, and ADC loops. Build it in Release mode, flash it, and verify GPIO
 edge timing separately with a logic analyzer when physical timing matters.
+Comment-prefixed metadata records the compiled board, chip, format version,
+and iteration count at the start of every capture.
+The fixture waits for one host byte before each run, preventing USB enumeration
+from racing the first record and allowing repeated samples without reflashing.
 `PICOKIT_USB_STDOUT_TIMEOUT_US` defaults to 10,000 microseconds; increase it
 when lossless diagnostics matter more than a responsive control loop.
 
@@ -179,6 +183,7 @@ cmake -S Firmware -B Firmware/build-performance -G Ninja \
   -DPICO_BOARD=pico2_w \
   -DPICOKIT_PRODUCT=Performance \
   -DPICOKIT_SOURCE="$PWD/Sources/Performance/main.swift" \
+  -DPICOKIT_USB_STDOUT_TIMEOUT_US=1000000 \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build Firmware/build-performance --parallel
 ```

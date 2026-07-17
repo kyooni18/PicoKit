@@ -16,6 +16,24 @@ extension PicoChip {
   }
 }
 
+/// Converts the fixed C facade status ABI into PicoKit's typed Swift errors.
+/// Kept independent of hardware access so host validation covers every mapping.
+@inline(__always)
+func picoKitGPIOError(status: Int32, operation: String) -> PicoKitError? {
+  #if PICOKIT_PICO_SDK
+    let chipMismatch = PICOKIT_GPIO_STATUS_CHIP_MISMATCH
+  #else
+    // Must remain synchronized with PicoKitSDKBridge.h. The bridge validation
+    // gate checks the imported firmware constant and this host-test fallback.
+    let chipMismatch: Int32 = -2
+  #endif
+  if status == chipMismatch {
+    return PicoKitError.unavailable("GPIO chip does not match compiled Pico chip")
+  }
+  if status != 0 { return PicoKitError.ioFailure(operation: operation, status: status) }
+  return nil
+}
+
 /// SDK-backed hardware access. The implementation is compiled only by the
 /// Pico firmware CMake target. Host tests can exercise validation via fakes.
 public final class PicoGPIO: DigitalIO {
@@ -36,19 +54,20 @@ public final class PicoGPIO: DigitalIO {
 
   #if PICOKIT_PICO_SDK
     @inline(__always)
-    private func validateCompiledChip() throws(PicoKitError) {
-      let compiledChip = picokit_compiled_chip() == 0 ? PicoChip.rp2040 : .rp2350
-      guard chip == compiledChip else {
-        throw PicoKitError.unavailable("GPIO chip does not match compiled Pico chip")
-      }
+    private var facadeChip: UInt32 { chip == .rp2040 ? 0 : 1 }
+
+    @inline(__always)
+    private func check(_ status: Int32, operation: String) throws(PicoKitError) {
+      if let error = picoKitGPIOError(status: status, operation: operation) { throw error }
     }
   #endif
 
   public func setMode(_ pin: PicoPin, mode: PinMode) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
-      try validateCompiledChip()
-      picokit_gpio_init(pin.rawValue)
-      picokit_gpio_set_direction(pin.rawValue, mode == .output ? 1 : 0)
+      try check(
+        picokit_gpio_set_mode(facadeChip, pin.rawValue, mode == .output ? 1 : 0),
+        operation: "GPIO mode"
+      )
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -63,18 +82,15 @@ public final class PicoGPIO: DigitalIO {
     slewRate: PinSlewRate = .slow
   ) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
-      try validateCompiledChip()
       let status = picokit_gpio_configure(
-        pin.rawValue,
+        facadeChip, pin.rawValue,
         mode == .output ? 1 : 0,
         initialState == .high ? 1 : 0,
         pull.rawValue,
         driveStrength.rawValue,
         slewRate.rawValue
       )
-      guard status == 0 else {
-        throw PicoKitError.ioFailure(operation: "GPIO setup", status: status)
-      }
+      try check(status, operation: "GPIO setup")
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -85,11 +101,13 @@ public final class PicoGPIO: DigitalIO {
     activeState: PinState = .low,
     duration: Duration
   ) throws(PicoKitError) {
-    try configure(pin, mode: .output, initialState: activeState.toggled)
-    try write(pin, state: activeState)
     #if PICOKIT_PICO_SDK
-      picokit_sleep_us(duration.microseconds)
-      try write(pin, state: activeState.toggled)
+      try check(
+        picokit_gpio_reset_pulse(
+          facadeChip, pin.rawValue, activeState == .high ? 1 : 0, duration.microseconds
+        ),
+        operation: "GPIO reset pulse"
+      )
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -97,8 +115,10 @@ public final class PicoGPIO: DigitalIO {
 
   public func write(_ pin: PicoPin, state: PinState) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
-      try validateCompiledChip()
-      picokit_gpio_write(pin.rawValue, state == .high ? 1 : 0)
+      try check(
+        picokit_gpio_write(facadeChip, pin.rawValue, state == .high ? 1 : 0),
+        operation: "GPIO write"
+      )
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -106,8 +126,9 @@ public final class PicoGPIO: DigitalIO {
 
   public func read(_ pin: PicoPin) throws(PicoKitError) -> PinState {
     #if PICOKIT_PICO_SDK
-      try validateCompiledChip()
-      return picokit_gpio_read(pin.rawValue) == 0 ? .low : .high
+      var value: UInt32 = 0
+      try check(picokit_gpio_read(facadeChip, pin.rawValue, &value), operation: "GPIO read")
+      return value == 0 ? .low : .high
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -115,8 +136,7 @@ public final class PicoGPIO: DigitalIO {
 
   public func toggle(_ pin: PicoPin) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
-      try validateCompiledChip()
-      picokit_gpio_toggle(pin.rawValue)
+      try check(picokit_gpio_toggle(facadeChip, pin.rawValue), operation: "GPIO toggle")
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -126,8 +146,7 @@ public final class PicoGPIO: DigitalIO {
   /// Bits above GPIO29 are ignored.
   public func set(mask: UInt32) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
-      try validateCompiledChip()
-      picokit_gpio_set_mask(mask)
+      try check(picokit_gpio_set_mask(facadeChip, mask), operation: "GPIO set mask")
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -137,8 +156,7 @@ public final class PicoGPIO: DigitalIO {
   /// Bits above GPIO29 are ignored.
   public func clear(mask: UInt32) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
-      try validateCompiledChip()
-      picokit_gpio_clear_mask(mask)
+      try check(picokit_gpio_clear_mask(facadeChip, mask), operation: "GPIO clear mask")
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
@@ -148,8 +166,7 @@ public final class PicoGPIO: DigitalIO {
   /// Bits above GPIO29 are ignored.
   public func toggle(mask: UInt32) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
-      try validateCompiledChip()
-      picokit_gpio_toggle_mask(mask)
+      try check(picokit_gpio_toggle_mask(facadeChip, mask), operation: "GPIO toggle mask")
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif

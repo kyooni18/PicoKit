@@ -105,7 +105,7 @@ if(PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS GREATER 4294967295)
     message(FATAL_ERROR "PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS must fit UInt32")
 endif()
 option(PICOKIT_USB_CONNECTION_WITHOUT_DTR
-    "Treat a ready USB CDC interface as connected without requiring host DTR" ON)
+    "Treat a ready USB CDC interface as connected without requiring host DTR" OFF)
 option(PICOKIT_ENABLE_USB
     "Initialize and link the USB CDC/reset interface for the firmware target" ON)
 # PICOKIT_SOURCE remains the backwards-compatible entry-point hint used by
@@ -174,7 +174,11 @@ endif()
 # behind fixed-width C functions so embedded Swift never imports SDK inlines.
 set(PICOKIT_BRIDGE_DIR "${PICOKIT_ROOT}/Firmware")
 set(PICOKIT_BRIDGE_MODULE_MAP "${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.modulemap")
-add_library(PicoKitSDKBridge STATIC "${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c")
+set(PICOKIT_BRIDGE_SOURCES
+    "${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c"
+    "${PICOKIT_BRIDGE_DIR}/PicoKitGPIOFacade.c"
+)
+add_library(PicoKitSDKBridge STATIC ${PICOKIT_BRIDGE_SOURCES})
 target_include_directories(PicoKitSDKBridge PUBLIC "${PICOKIT_BRIDGE_DIR}")
 target_compile_definitions(PicoKitSDKBridge PRIVATE
     PICOKIT_COMPILED_BOARD=${PICOKIT_COMPILED_BOARD}
@@ -188,14 +192,14 @@ if(PICOKIT_BRIDGE_WARNINGS)
         -Wcast-align -Wcast-qual -Wpointer-arith -Wformat=2
         -fanalyzer -Werror
     )
-    set_source_files_properties("${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c"
+    set_source_files_properties(${PICOKIT_BRIDGE_SOURCES}
         PROPERTIES COMPILE_OPTIONS
         "${PICOKIT_BRIDGE_WARNING_FLAGS}"
     )
 else()
     # Clear source properties when an existing build directory is reconfigured
     # from ON to OFF; CMake does not remove them automatically.
-    set_source_files_properties("${PICOKIT_BRIDGE_DIR}/PicoKitSDKBridge.c"
+    set_source_files_properties(${PICOKIT_BRIDGE_SOURCES}
         PROPERTIES COMPILE_OPTIONS "")
 endif()
 set(PICOKIT_SDK_LIBRARIES
@@ -220,9 +224,12 @@ if(PICOKIT_ENABLE_USB)
         target_compile_definitions(PicoKitSDKBridge PRIVATE
             PICO_STDIO_USB_CONNECTION_WITHOUT_DTR=1
         )
+    else()
+        message(STATUS "PicoKit USB CDC connection check: DTR-dependent")
     endif()
     pico_enable_stdio_usb(PicoKitSDKBridge 1)
 else()
+    message(STATUS "PicoKit USB CDC: disabled")
     target_compile_definitions(PicoKitSDKBridge PRIVATE PICOKIT_ENABLE_USB=0)
     pico_enable_stdio_usb(PicoKitSDKBridge 0)
 endif()

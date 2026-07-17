@@ -66,11 +66,15 @@ struct PicoKitHostTests {
     let aliases: [(String, PicoBoard)] = [
       ("pico", .pico), ("pico_w", .picoW), ("pico-w", .picoW),
       ("pico2", .pico2), ("pico2_w", .pico2W), ("pico2-w", .pico2W),
+      ("PICO", .pico), ("Pico-W", .picoW),
+      ("PICO2", .pico2), ("pIcO2_W", .pico2W),
+      ("  pico_w\n", .picoW), ("\tpico2\t", .pico2),
     ]
     for (name, expected) in aliases {
       require(PicoBoard(configurationName: name) == expected, "board alias failed: \(name)")
     }
     require(PicoBoard(configurationName: "unknown") == nil, "unknown board accepted")
+    require(PicoBoard(configurationName: " \t\n ") == nil, "whitespace-only board accepted")
     require(PicoBoard.pico.chip == .rp2040, "Pico chip mismatch")
     require(PicoBoard.pico2W.chip == .rp2350, "Pico 2 W chip mismatch")
     require(PicoBoard.pico2W.cmakeName == "pico2_w", "CMake board spelling mismatch")
@@ -78,10 +82,21 @@ struct PicoKitHostTests {
     require(PicoBoard.picoW.onboardLED == nil, "Pico W should use BoardLED")
     require(PicoBoard.pico2.onboardLED == 25, "Pico 2 LED mismatch")
     require(PicoBoard.pico2W.onboardLED == nil, "Pico 2 W should use BoardLED")
+    require(
+      PicoBoard.allCases.map(\.cmakeName) == ["pico", "pico_w", "pico2", "pico2_w"],
+      "board CaseIterable/CMake mapping drifted"
+    )
+    require(!PicoBoard.pico.isWireless, "Pico should not report wireless hardware")
+    require(PicoBoard.picoW.isWireless, "Pico W wireless metadata missing")
+    require(!PicoBoard.pico2.isWireless, "Pico 2 should not report wireless hardware")
+    require(PicoBoard.pico2W.isWireless, "Pico 2 W wireless metadata missing")
     require(PicoChip.compiled == .rp2040, "host compiled chip default mismatch")
     require(PicoBoard.compiled == .pico, "host compiled board default mismatch")
     require(PicoGPIO.compiled.chip == .rp2040, "host compiled GPIO default mismatch")
     require(PicoGPIO().chip == .rp2040, "default GPIO chip mismatch")
+    requireError(.unavailable("Pico SDK bridge"), "host BoardLED unexpectedly touched hardware") {
+      _ = try BoardLED(board: .pico)
+    }
     require(PicoPin.gpio18.rawValue == 18, "GPIO convenience value mismatch")
 
     for value in 0...29 {
@@ -91,6 +106,9 @@ struct PicoKitHostTests {
     }
     requireError(.invalidPin(-1), "negative GPIO accepted") { _ = try PicoPin(-1) }
     requireError(.invalidPin(30), "GPIO30 accepted") { _ = try PicoPin(30) }
+    require(PicoPin.gpio0 < PicoPin.gpio29, "GPIO pin ordering failed")
+    require(PicoPin(rawValue: 29)?.rawValue == 29, "raw GPIO29 value rejected")
+    require(PicoPin(rawValue: 30) == nil, "raw GPIO30 value accepted")
 
     let busFrequency = try Frequency.megahertz(1)
     requireError(
@@ -172,10 +190,16 @@ struct PicoKitHostTests {
     requireError(.invalidFrequency(UInt32.max), "frequency overflow accepted") {
       _ = try Frequency.kilohertz(UInt32.max)
     }
+    requireError(.invalidFrequency(UInt32.max), "MHz frequency overflow accepted") {
+      _ = try Frequency.megahertz(UInt32.max)
+    }
 
     try require(try Duration.milliseconds(10).microseconds == 10_000, "duration conversion failed")
     try require(try Duration.seconds(2).microseconds == 2_000_000, "seconds conversion failed")
     requireError(.invalidTimeout(0), "zero timeout accepted") { _ = try Duration.microseconds(0) }
+    requireError(.invalidTimeout(UInt64.max), "millisecond timeout overflow accepted") {
+      _ = try Duration.milliseconds(UInt64.max)
+    }
     requireError(.invalidTimeout(UInt64.max), "duration overflow accepted") {
       _ = try Duration.seconds(UInt64.max)
     }
@@ -193,8 +217,29 @@ struct PicoKitHostTests {
       _ = try picoKitWatchdogMilliseconds(.microseconds(UInt64(UInt32.max) * 1_000 + 1))
     }
     try require(try picoKitADCChannel(for: 26) == .gpio26, "ADC GPIO mapping failed")
+    try require(try picoKitADCChannel(for: 27) == .gpio27, "ADC GPIO27 mapping failed")
+    try require(try picoKitADCChannel(for: 28) == .gpio28, "ADC GPIO28 mapping failed")
+    try require(try picoKitADCChannel(for: 29) == .gpio29, "ADC GPIO29 mapping failed")
     requireError(.invalidPin(-1), "negative ADC GPIO accepted") {
       _ = try picoKitADCChannel(for: -1)
+    }
+    requireError(.unavailable("ADC is only available on GPIO26...GPIO29"), "non-ADC GPIO accepted") {
+      _ = try picoKitADCChannel(for: 25)
+    }
+    require(ADCChannel.allCases == [.gpio26, .gpio27, .gpio28, .gpio29, .temperature], "ADC channel order drifted")
+    require(GPIOInterruptEdge.rising.rawValue == 1, "rising interrupt edge value drifted")
+    require(GPIOInterruptEdge.falling.rawValue == 2, "falling interrupt edge value drifted")
+    require(GPIOInterruptEdge.either.rawValue == 3, "either interrupt edge value drifted")
+    let interrupts = PicoInterrupts()
+    requireError(.unavailable("Pico SDK bridge"), "host interrupt enable unexpectedly touched hardware") {
+      try interrupts.enable(.gpio0, edge: .either)
+    }
+    require(interrupts.takeEvents(for: .gpio0) == 0, "host interrupt events were not empty")
+    requireError(.unavailable("Pico SDK bridge"), "host ADC initialization unexpectedly touched hardware") {
+      _ = try PicoADC()
+    }
+    requireError(.unavailable("Pico SDK bridge"), "host PWM initialization unexpectedly touched hardware") {
+      _ = try PicoPWM(pin: .gpio0, frequency: busFrequency)
     }
     requireError(.invalidPin(30), "ADC GPIO30 accepted") {
       _ = try picoKitADCChannel(for: 30)
@@ -208,12 +253,67 @@ struct PicoKitHostTests {
     ) {
       _ = try picoKitTransferCount(Int(Int32.max) + 1, operation: "large transfer")
     }
+    require(
+      picoKitSerialWriteError(status: 0, operation: "USB serial write") == nil,
+      "successful USB serial write mapped to an error"
+    )
+    require(
+      picoKitSerialWriteError(status: -2, operation: "USB serial write")
+        == .unavailable("USB serial host is not connected"),
+      "disconnected USB serial write lost its explicit error"
+    )
+    require(
+      picoKitSerialWriteError(status: -9, operation: "USB serial write")
+        == .ioFailure(operation: "USB serial write", status: -9),
+      "unknown USB serial write status was not preserved"
+    )
+    require(picoKitSerialNoDataStatus() == -3, "USB serial no-data status drifted")
+    require(
+      picoKitSerialReadError(status: 0, operation: "USB serial read") == nil,
+      "successful USB serial read mapped to an error"
+    )
+    require(
+      picoKitSerialReadError(status: -3, operation: "USB serial read") == nil,
+      "USB serial no-data status mapped to an I/O error"
+    )
+    require(
+      picoKitSerialReadError(status: -2, operation: "USB serial read")
+        == .unavailable("USB serial host is not connected"),
+      "disconnected USB serial read lost its explicit error"
+    )
+    require(
+      picoKitSerialReadError(status: -9, operation: "USB serial read")
+        == .ioFailure(operation: "USB serial read", status: -9),
+      "unknown USB serial read status was not preserved"
+    )
 
     require(PinState.low.toggled == .high, "low toggle failed")
     require(PinState.high.toggled == .low, "high toggle failed")
     require(
       PicoKitError.timedOut(operation: "read").description == "read timed out",
       "error description failed")
+    require(
+      PicoKitError.invalidPin(30).description == "GPIO pin 30 is outside 0...29",
+      "invalid pin description failed"
+    )
+    require(
+      PicoKitError.invalidAddress(0x01).description == "I2C address 0x1 is outside 0x08...0x77",
+      "invalid I2C address description failed"
+    )
+    require(
+      PicoKitError.unavailable("test feature").description == "test feature is unavailable for this board or build",
+      "unavailable feature description failed"
+    )
+    require(
+      PicoKitError.invalidPeripheralPin(peripheral: "spi0 SCK", pin: .gpio10).description
+        == "GPIO10 cannot be used as spi0 SCK",
+      "invalid peripheral pin description failed"
+    )
+    require(
+      PicoKitError.ioFailure(operation: "GPIO read", status: -7).description
+        == "GPIO read failed with SDK status -7",
+      "I/O failure description failed"
+    )
     require(
       PicoKitError.invalidFrequency(UInt32.max).description
         == "frequency \(UInt32.max) Hz is zero, overflows, or is unsupported",
@@ -237,6 +337,23 @@ struct PicoKitHostTests {
   }
 
   private static func testGPIOFacade() throws {
+    require(picoKitGPIOError(status: 0, operation: "GPIO write") == nil, "GPIO success mapped to error")
+    require(
+      picoKitGPIOError(status: -2, operation: "GPIO write")
+        == .unavailable("GPIO chip does not match compiled Pico chip"),
+      "GPIO chip mismatch status mapping failed"
+    )
+    require(
+      picoKitGPIOError(status: -1, operation: "GPIO setup")
+        == .ioFailure(operation: "GPIO setup", status: -1),
+      "GPIO invalid argument status mapping failed"
+    )
+    require(
+      picoKitGPIOError(status: -9, operation: "GPIO read")
+        == .ioFailure(operation: "GPIO read", status: -9),
+      "GPIO unknown failure status mapping failed"
+    )
+
     let fake = FakeGPIO()
     try pinMode(4, .output, using: fake)
     try digitalWrite(4, .high, using: fake)
@@ -309,6 +426,10 @@ struct PicoKitHostTests {
     }
     let _: (PicoI2C) -> Frequency = { $0.actualFrequency }
     let _: (BoardLED) -> PicoBoard = { $0.board }
+    let _: () throws -> BoardLED = { try BoardLED() }
+    let _: (PicoBoard) throws -> BoardLED = { try BoardLED(board: $0) }
+    let _: (BoardLED, PinState) throws -> Void = { try $0.set($1) }
+    let _: (BoardLED) throws -> Void = { try $0.toggle() }
     let _: (PicoGPIO, UInt32) throws -> Void = { try $0.set(mask: $1) }
     let _: (PicoGPIO, UInt32) throws -> Void = { try $0.clear(mask: $1) }
     let _: (PicoGPIO, UInt32) throws -> Void = { try $0.toggle(mask: $1) }

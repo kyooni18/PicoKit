@@ -1,6 +1,6 @@
 import PicoKit
 
-/// Release-mode, USB-CDC timing fixture for the connected Pico 2 W.
+/// Release-mode, USB-CDC timing fixture for the connected supported Pico.
 /// Each record is `metric,iterations,elapsed_us,check` so host tools can
 /// collect medians without parsing prose.
 @main
@@ -8,21 +8,42 @@ struct Performance {
   private static let iterations: UInt32 = 100_000
 
   static func main() {
-    // Initialize USB CDC before waiting, otherwise a monitor cannot open
-    // the port until after the one-shot report has already begun.
+    // Initialize USB CDC, then wait for one host byte. This makes capture
+    // readiness explicit and permits repeat runs without reflashing.
     _ = Serial.available
-    // Give a monitor time to reopen USB CDC after a reset or flash.
-    sleep(2_000)
-    Serial.println("metric,iterations,elapsed_us,check")
-    cpuBenchmarks()
-    peripheralBenchmarks()
-    Serial.println("complete,0,0,0")
-    while true { sleep(1_000) }
+    while true {
+      while !Serial.connected { sleep(10) }
+      emit("# ready=send-one-byte")
+      while Serial.connected {
+        if Serial.read() != nil {
+          runOnce()
+          break
+        }
+        sleep(10)
+      }
+    }
   }
 
-  private static func report(_ metric: String, _ startedAt: UInt64, _ check: UInt32) {
+  private static func runOnce() {
+    emit("# format=picokit-performance-v1")
+    emit("# chip=" + PicoChip.compiled.rawValue)
+    emit("# board=" + (PicoBoard.compiled?.rawValue ?? "custom"))
+    emit("# iterations=" + String(iterations))
+    emit("metric,iterations,elapsed_us,check")
+    cpuBenchmarks()
+    peripheralBenchmarks()
+    emit("complete,0,0,0")
+  }
+
+  private static func emit(_ line: String) {
+    Serial.println(line)
+  }
+
+  @discardableResult
+  private static func report(_ metric: String, _ startedAt: UInt64, _ check: UInt32) -> UInt64 {
     let elapsed = Clock.now() - startedAt
-    Serial.println(metric + "," + String(iterations) + "," + String(elapsed) + "," + String(check))
+    emit(metric + "," + String(iterations) + "," + String(elapsed) + "," + String(check))
+    return elapsed
   }
 
   private static func cpuBenchmarks() {
@@ -104,7 +125,7 @@ struct Performance {
 
   private static func peripheralBenchmarks() {
     do {
-      let gpio = PicoGPIO.rp2350
+      let gpio = PicoGPIO.compiled
       try gpio.configure(.gpio14, mode: .output)
       try gpio.configure(.gpio15, mode: .output)
       let mask: UInt32 = (1 << 14) | (1 << 15)
@@ -114,7 +135,7 @@ struct Performance {
         try gpio.toggle(.gpio14)
         index &+= 1
       }
-      report("gpio.single_toggle", singleStart, 0)
+      let singleElapsed = report("gpio.single_toggle", singleStart, 0)
 
       index = 0
       let maskStart = Clock.now()
@@ -122,7 +143,29 @@ struct Performance {
         try gpio.toggle(mask: mask)
         index &+= 1
       }
-      report("gpio.mask_toggle", maskStart, 0)
+      let maskElapsed = report("gpio.mask_toggle", maskStart, 0)
+
+      // Counterbalance a second pair to expose ordering, cache, or thermal
+      // effects instead of attributing them to the API from one ordering.
+      index = 0
+      let maskSecondStart = Clock.now()
+      while index < iterations {
+        try gpio.toggle(mask: mask)
+        index &+= 1
+      }
+      let maskSecondElapsed = report("gpio.mask_toggle.second_pass", maskSecondStart, 0)
+
+      index = 0
+      let singleSecondStart = Clock.now()
+      while index < iterations {
+        try gpio.toggle(.gpio14)
+        index &+= 1
+      }
+      let singleSecondElapsed = report("gpio.single_toggle.second_pass", singleSecondStart, 0)
+      emit(
+        "gpio.counterbalanced," + String(singleElapsed) + "," + String(maskElapsed) + ","
+          + String(maskSecondElapsed) + "," + String(singleSecondElapsed)
+      )
 
       let pwm = try PicoPWM(pin: .gpio0, frequency: .kilohertz(1))
       index = 0
@@ -151,7 +194,7 @@ struct Performance {
       }
       report("adc.same_channel", adcStart, UInt32(sample))
     } catch {
-      Serial.println("error,0,0,1")
+      emit("error,0,0,1")
     }
   }
 }

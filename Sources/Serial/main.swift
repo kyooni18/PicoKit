@@ -4,15 +4,22 @@ import PicoKit
 @main
 struct SerialExample {
   static func main() {
-    Serial.println("PicoKit serial echo: ready")
-
+    var announced = false
     while true {
-      if let byte = Serial.read() {
+      if !Serial.connected {
+        announced = false
+        sleep(10)
+      } else if !announced {
+        Serial.println("PicoKit serial echo: ready")
+        announced = true
+      } else if let byte = Serial.read() {
         if byte == 0x0A {
           Serial.println()
         } else {
           Serial.write(byte)
         }
+      } else {
+        sleepMicroseconds(100)
       }
     }
   }

@@ -29,7 +29,6 @@ import PicoKit
 struct Blink {
     static func main() {
         pinMode(15, .output)
-        Serial.println("blink: started")
 
         while true {
             digitalWrite(15, .high)
@@ -128,25 +127,33 @@ import PicoKit
 @main
 struct SerialEcho {
     static func main() {
-        Serial.println("serial-echo: ready")
-
+        var announced = false
         while true {
-            if let byte = Serial.read() {
+            if !Serial.connected {
+                announced = false
+                sleep(10)
+            } else if !announced {
+                Serial.println("serial-echo: ready")
+                announced = true
+            } else if let byte = Serial.read() {
                 Serial.write(byte)
             } else {
-                sleep(1)
+                sleepMicroseconds(100)
             }
         }
     }
 }
 ```
 
-`Serial.read()` is nonblocking. The 1 ms sleep in the empty case prevents a
-busy loop while keeping the echo responsive. Run `./swiftpico monitor
---reconnect`, type into the terminal, and verify that each byte returns.
+`Serial.read()` is nonblocking. The short idle sleep prevents a busy loop, and
+resetting `announced` makes every new monitor session receive the readiness
+line. Run `./swiftpico monitor --reconnect`, type into the terminal, and verify
+that each byte returns.
 
 Use `USBSerial.read(timeout:)` instead when lack of input by a deadline is a
-meaningful error:
+meaningful error. A connected but idle host throws `PicoKitError.timedOut`,
+while a disconnected host throws
+`PicoKitError.unavailable("USB serial host is not connected")`:
 
 ```swift
 let serial = try USBSerial()
@@ -210,6 +217,7 @@ struct ADCLogger {
     static func main() {
         do {
             let adc = try PicoADC()
+            while !Serial.connected { sleep(10) }
             Serial.println("sample,raw")
             var index: UInt32 = 0
 

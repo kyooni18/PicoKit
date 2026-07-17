@@ -3,6 +3,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 bridge="$root/Firmware/PicoKitSDKBridge.c"
+gpioFacade="$root/Firmware/PicoKitGPIOFacade.c"
 cmakeFile="$root/Firmware/CMakeLists.txt"
 swiftBuses="$root/Sources/PicoKitHAL/Buses.swift"
 swiftSerial="$root/Sources/PicoKitHAL/Serial.swift"
@@ -71,6 +72,10 @@ grep -Fq 'picokit_uart_init_with_actual_baud_rate' "$bridge"
 grep -Fq 'uint32_t actual_baud_rate = uart_init(uart, baud_rate);' "$bridge"
 grep -Fq '#if PICOKIT_ENABLE_USB' "$bridge"
 grep -Fq '#include "pico/stdio_usb.h"' "$bridge"
+grep -Fq 'if (!picokit_stdio_connected()) return PICOKIT_STDIO_STATUS_DISCONNECTED;' "$bridge"
+grep -Fq 'const uint32_t poll_slice_us = 10000;' "$bridge"
+grep -Fq 'return PICOKIT_STDIO_STATUS_NO_DATA;' "$bridge"
+test "$(rg -n '^#if PICOKIT_ENABLE_USB$' "$bridge" | wc -l | tr -d ' ')" -ge 3
 grep -Fq 'uint32_t picokit_compiled_chip(void)' "$bridge"
 grep -Fq 'uint32_t picokit_compiled_board(void)' "$bridge"
 grep -Fq 'PICOKIT_COMPILED_BOARD' "$bridge"
@@ -82,9 +87,24 @@ grep -Fq '__attribute__((constructor(101)))' "$bridge"
 grep -Fq 'picokit_initialize_usb_stdio' "$bridge"
 grep -Fq 'UART chip does not match compiled Pico chip' "$root/Sources/PicoKitHAL/UART.swift"
 grep -Fq 'GPIO chip does not match compiled Pico chip' "$root/Sources/PicoKitHAL/GPIO.swift"
+grep -Fq 'static int32_t picokit_gpio_validate(uint32_t chip, uint32_t pin)' "$gpioFacade"
+grep -Fq '#define PICOKIT_GPIO_COMPILED_CHIP 0u' "$gpioFacade"
+grep -Fq '#define PICOKIT_GPIO_COMPILED_CHIP 1u' "$gpioFacade"
+grep -Fq 'int32_t picokit_gpio_reset_pulse' "$gpioFacade"
+grep -Fq 'PICOKIT_GPIO_STATUS_CHIP_MISMATCH = -2' "$root/Firmware/PicoKitSDKBridge.h"
+grep -Fq 'let chipMismatch = PICOKIT_GPIO_STATUS_CHIP_MISMATCH' "$root/Sources/PicoKitHAL/GPIO.swift"
+grep -Fq 'let chipMismatch: Int32 = -2' "$root/Sources/PicoKitHAL/GPIO.swift"
+if grep -Eq 'picokit_gpio_(init|set_direction)' "$root/Firmware/PicoKitSDKBridge.h"; then
+    echo "low-level GPIO primitives escaped the high-level C facade" >&2
+    exit 1
+fi
 grep -Fq 'public convenience init() throws(PicoKitError)' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'unknown compiled Pico board' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'public static var compiled: PicoGPIO' "$root/Sources/PicoKitHAL/GPIO.swift"
+if grep -Eq 'class PicoGPIO[^\{]*Sendable' "$root/Sources/PicoKitHAL/GPIO.swift"; then
+    echo "PicoGPIO must not promise synchronization through Sendable" >&2
+    exit 1
+fi
 grep -Fq 'static var compiled: Self' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'static var compiled: Self?' "$root/Sources/PicoKitHAL/GPIO.swift"
 grep -Fq 'public init(chip: PicoChip = .compiled)' "$root/Sources/PicoKitHAL/GPIO.swift"
@@ -93,12 +113,17 @@ grep -Fq 'case .ownershipConflict(let reason): reason' "$root/Sources/PicoKitCor
 grep -Fq 'is zero, overflows, or is unsupported' "$root/Sources/PicoKitCore/PicoKitCore.swift"
 grep -Fq 'let led = try BoardLED()' "$root/Sources/Blink/main.swift"
 grep -Fq 'self.gpio = PicoGPIO.compiled' "$root/Sources/PicoKitHAL/Serial.swift"
+grep -Fq 'try! gpio.pinMode(pin, mode)' "$root/Sources/PicoKitHAL/Serial.swift"
+grep -Fq 'try! gpio.digitalWrite(pin, state)' "$root/Sources/PicoKitHAL/Serial.swift"
 grep -Fq 'SPI chip-select GPIO does not match compiled Pico chip' "$swiftBuses"
 grep -Fq 'let compiledChip = picokit_compiled_chip() == 0 ? PicoChip.rp2040 : .rp2350' "$swiftBuses"
 grep -Fq 'PicoGPIO(chip: compiledChip)' "$swiftBuses"
 grep -Fq '#if PICO_RP2040' "$bridge"
 grep -Fq 'operation: "I2C write", transferred: Int(result), expected: Int(count)' "$swiftBuses"
-grep -Fq 'let validated = try? PicoPin(pin)' "$swiftSerial"
+if grep -Fq 'picokit_gpio_' "$swiftSerial"; then
+    echo "Pico sketch facade bypasses PicoGPIO" >&2
+    exit 1
+fi
 grep -Fq 'invalid read arguments must never cause a prefix' "$swiftBuses"
 grep -Fq '_ = try picoKitTransferCount(count, operation: "I2C read")' "$swiftBuses"
 grep -Fq 'spi_read_blocking(spi, repeated_tx_data' "$bridge"
@@ -197,5 +222,6 @@ grep -Fq 'channel == ADC_TEMPERATURE_CHANNEL_NUM' "$bridge"
 grep -Fq 'static uint32_t picokit_adc_initialization_state;' "$bridge"
 grep -Fq '__atomic_compare_exchange_n(' "$bridge"
 grep -Fq '__atomic_store_n(&picokit_adc_initialization_state, 2u, __ATOMIC_RELEASE);' "$bridge"
-grep -Fq 'if (!picokit_valid_gpio(pin) || pull > 2 || drive > 3 || slew > 1)' "$bridge"
+grep -Fq 'int32_t status = picokit_gpio_validate(chip, pin);' "$gpioFacade"
+grep -Fq 'if (output > 1 || initial_value > 1 || pull > 2 || drive > 3 || slew > 1)' "$gpioFacade"
 echo "PicoKit bridge arithmetic validation passed"

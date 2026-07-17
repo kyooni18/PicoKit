@@ -33,6 +33,10 @@ brew install swiftpico
 swiftpico init --board pico2_w --name Blink --template blink
 ```
 
+Project names must be non-empty, must not contain `/` or `\\`, must not be `.` or
+`..`, and must not contain control characters so generated files and metadata stay
+well-formed inside the requested destination.
+
 The initializer creates a normal standalone Swift package. It writes the
 `Package.swift`, board configuration, firmware CMake entrypoint, and local
 launcher needed for a PicoKit project, so the PicoKit checkout itself can stay
@@ -109,6 +113,11 @@ try gpio.setMode(pin, mode: .output)
 try gpio.write(pin, state: .high)
 ```
 
+`BoardLED()` follows the firmware's selected `PicoBoard`; the wireless
+variants (`pico_w` and `pico2_w`) use the SDK status-LED path instead of a
+GPIO-number LED. Use `PicoBoard.isWireless` when application configuration
+needs to distinguish those variants.
+
 If you like the familiar Arduino spelling but still want error handling, use
 the throwing helpers with an explicit GPIO controller:
 
@@ -126,7 +135,6 @@ wrong, so the lower-level API above remains available whenever recovery matters:
 import PicoKit
 
 pinMode(15, .output)
-Serial.println("starting")
 
 while true {
     if let byte = Serial.read() {
@@ -188,8 +196,16 @@ Swift from an IRQ handler.
 ```sh
 swift build
 swift run PicoKitHostTests
+sh Tests/gpio-facade-host.sh
 sh Tests/api-reference.sh
 ```
+
+`PicoKitHostTests` is the package's executable validation target; it is used
+instead of `swift test` so the same Foundation-free checks work with embedded
+Swift toolchains.
+
+The GPIO facade host gate uses a fake Pico SDK to verify C-side validation and
+hardware-call sequencing without a connected board.
 
 The temporary-project integration creates a disposable SwiftPico serial-echo
 project against this checkout, builds its UF2, and verifies the picotool flash
@@ -213,6 +229,8 @@ sh Tests/integration/direct-cmake.sh
 sh Tests/integration/compiler-discovery.sh
 # Verify USB CMake option bounds without compiling firmware.
 sh Tests/integration/cmake-options.sh
+# Compile the throwing USB write status probe for RP2040 and RP2350.
+sh Tests/integration/usb-serial-status-firmware.sh
 ```
 
 `PICOKIT_USB_CONNECT_WAIT_TIMEOUT_MS` defaults to `0`. Use a positive value to
@@ -220,9 +238,9 @@ wait a bounded number of milliseconds for CDC, or `-1` to wait indefinitely as
 supported by the Pico SDK.
 `PICOKIT_USB_POST_CONNECT_WAIT_DELAY_MS` defaults to `50` ms and can be set to
 `0` or a larger value to tune terminal settling after CDC enumeration.
-Set `PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON` when the host does not assert DTR;
-the default is `ON`. `Serial.connected` therefore reports USB readiness without
-requiring modem-control changes from the monitor.
+Set `PICOKIT_USB_CONNECTION_WITHOUT_DTR=ON` only when the host does not assert DTR;
+the default is `OFF`. `Serial.connected` therefore reports an opened CDC
+session by default instead of mere USB enumeration.
 
 Set `PICO_HARDWARE_TEST=1` to additionally flash one detected Pico and verify
 an exact binary USB CDC echo. A board in BOOTSEL mode is flashed even without a
@@ -257,7 +275,8 @@ cd Blink
 ```
 
 Supported canonical boards are `pico`, `pico_w`, `pico2`, and `pico2_w`; the
-hyphenated `pico-w` and `pico2-w` spellings work too. The generated
+hyphenated `pico-w` and `pico2-w` spellings work too. PicoKit configuration
+parsing is case-insensitive and trims surrounding whitespace. The generated
 `swiftpico.json` records the CMake board identifier, product target, UF2 output,
 and PicoKit dependency source. Start with `blink` or `serial`, then explore the
 `adc`, `pwm`, `i2c`, `spi`, `interrupt`, and `watchdog` templates as needed.

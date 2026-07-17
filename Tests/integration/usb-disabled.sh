@@ -7,6 +7,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 swiftpico=${SWIFTPICO_ROOT:-"$root/../SwiftPico"}
 swiftpico=$(CDPATH= cd -- "$swiftpico" && pwd)
 export PATH="/opt/homebrew/bin:$PATH"
+export CMAKE_OSX_ARCHITECTURES="$(uname -m)"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -29,6 +30,7 @@ for board in pico pico_w pico2 pico2_w; do
         "$cli" build --configuration release --context "$project/swiftpico.json" >"$build_log" 2>&1
     )
     grep -Fq "PicoKit compiled board: $board ($expected_compiled_board)" "$build_log"
+    grep -Fq 'PicoKit USB CDC: disabled' "$build_log"
     test -f "$project/Firmware/build/NoUSB.uf2"
 done
 

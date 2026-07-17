@@ -10,10 +10,16 @@ extern "C" {
 // compiling the PicoKit library, never application sources directly.
 void picokit_stdio_init(void);
 uint32_t picokit_stdio_connected(void);
-void picokit_stdio_write(const char *text);
-void picokit_stdio_write_line(const char *text);
-void picokit_stdio_write_byte(uint8_t byte);
-void picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count);
+enum {
+    PICOKIT_STDIO_STATUS_OK = 0,
+    PICOKIT_STDIO_STATUS_INVALID_ARGUMENT = -1,
+    PICOKIT_STDIO_STATUS_DISCONNECTED = -2,
+    PICOKIT_STDIO_STATUS_NO_DATA = -3,
+};
+int32_t picokit_stdio_write(const char *text);
+int32_t picokit_stdio_write_line(const char *text);
+int32_t picokit_stdio_write_byte(uint8_t byte);
+int32_t picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count);
 int32_t picokit_stdio_read(uint8_t *byte, uint64_t timeout_us);
 int32_t picokit_uart_init(uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx);
 int32_t picokit_uart_init_with_actual_baud_rate(uint32_t instance, uint32_t baud_rate,
@@ -28,16 +34,23 @@ int32_t picokit_status_led_init(void);
 void picokit_status_led_write(uint32_t value);
 void picokit_status_led_toggle(void);
 
-void picokit_gpio_init(uint32_t pin);
-void picokit_gpio_set_direction(uint32_t pin, uint32_t output);
-void picokit_gpio_write(uint32_t pin, uint32_t value);
-uint32_t picokit_gpio_read(uint32_t pin);
-void picokit_gpio_toggle(uint32_t pin);
-void picokit_gpio_set_mask(uint32_t mask);
-void picokit_gpio_clear_mask(uint32_t mask);
-void picokit_gpio_toggle_mask(uint32_t mask);
-int32_t picokit_gpio_configure(uint32_t pin, uint32_t output, uint32_t initial_value,
+enum {
+    PICOKIT_GPIO_STATUS_OK = 0,
+    PICOKIT_GPIO_STATUS_INVALID_ARGUMENT = -1,
+    PICOKIT_GPIO_STATUS_CHIP_MISMATCH = -2,
+};
+
+int32_t picokit_gpio_set_mode(uint32_t chip, uint32_t pin, uint32_t output);
+int32_t picokit_gpio_write(uint32_t chip, uint32_t pin, uint32_t value);
+int32_t picokit_gpio_read(uint32_t chip, uint32_t pin, uint32_t *value);
+int32_t picokit_gpio_toggle(uint32_t chip, uint32_t pin);
+int32_t picokit_gpio_set_mask(uint32_t chip, uint32_t mask);
+int32_t picokit_gpio_clear_mask(uint32_t chip, uint32_t mask);
+int32_t picokit_gpio_toggle_mask(uint32_t chip, uint32_t mask);
+int32_t picokit_gpio_configure(uint32_t chip, uint32_t pin, uint32_t output, uint32_t initial_value,
                                uint32_t pull, uint32_t drive, uint32_t slew);
+int32_t picokit_gpio_reset_pulse(uint32_t chip, uint32_t pin, uint32_t active_value,
+                                 uint64_t duration_us);
 
 uint64_t picokit_time_us(void);
 void picokit_sleep_us(uint64_t microseconds);
