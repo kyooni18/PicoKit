@@ -371,10 +371,12 @@ the board-specific limits above; call `update()` before it expires.
 | Condition | Error or behavior |
 |---|---|
 | Invalid GPIO number | `invalidPin` |
+| Peripheral pin choice is not valid for the selected instance or chip | `invalidPeripheralPin` |
 | Zero or overflowing frequency | `invalidFrequency` |
 | Zero/overflowing duration, oversized I2C timeout, or oversized watchdog timeout | `invalidTimeout` |
 | I2C address outside `0x08...0x77` | `invalidAddress` |
 | Missing SDK bridge or unsupported feature | `unavailable` |
 | Bounded operation made no progress before its deadline | `timedOut` |
+| Bounded transfer made partial progress before its deadline | `partialTransfer` |
 | Other Pico SDK failure | `ioFailure` |
 | Helper or peripheral configuration has a pin/instance conflict | `ownershipConflict` |
