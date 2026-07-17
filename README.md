@@ -85,6 +85,7 @@ The maintained documentation is organized by workflow and peripheral:
 - [External libraries](Docs/external-libraries.md)
 - [Performance](Docs/performance.md)
 - [API reference](Docs/api-reference.md)
+- [Integration notes](Docs/integration.md)
 
 ## Firmware API
 
@@ -290,6 +291,6 @@ physical validation matrix; it is deliberately separate from build validation.
 
 PicoKit firmware projects can fetch C dependencies with CMake and compile
 Embedded Swift package targets through the extension points described in [the
-external-library guide](Docs/integration.md). Keep the dependency
+external-library guide](Docs/external-libraries.md). Keep the dependency
 CMake file in the project so the precise targets and source directories linked
 into firmware remain reviewable.
