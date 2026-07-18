@@ -4,14 +4,26 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 links=$(mktemp)
 raw_links=$(mktemp)
-trap 'rm -f "$links" "$raw_links"' EXIT
+visible=$(mktemp)
+trap 'rm -f "$links" "$raw_links" "$visible"' EXIT
 
-for document in "$root/README.md" "$root/Docs/README.md"; do
+for document in "$root/README.md" "$root"/Docs/*.md; do
     test -s "$document"
     base=$(dirname "$document")
-    if ! rg -o --with-filename '\]\([^)]*' "$document" > "$raw_links"; then
-        echo "$document contains no readable markdown links" >&2
-        exit 1
+    awk '
+        /^```/ { in_fence = !in_fence; next }
+        !in_fence { print }
+    ' "$document" > "$visible"
+    if ! rg -o --with-filename '\]\([^)]*' "$visible" > "$raw_links"; then
+        case "$document" in
+            "$root/README.md"|"$root/Docs/README.md")
+                echo "$document contains no readable markdown links" >&2
+                exit 1
+                ;;
+            *)
+                continue
+                ;;
+        esac
     fi
     sed -E 's/^[^:]+:\]\((.*)$/\1/; s/#.*$//' "$raw_links" > "$links"
     test -s "$links"
