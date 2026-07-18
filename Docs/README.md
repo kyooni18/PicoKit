@@ -84,6 +84,8 @@ the decisions and failure modes that a declaration alone cannot express.
    interrupts, watchdogs, concurrency, and handoff order.
 25. [Host portability](host-portability.md) — Foundation-free targets,
    conditional SDK paths, fake seams, architecture coverage, and evidence.
+26. [Protocol framing](protocol-framing.md) — raw bytes, byte order, bus frame
+   widths, UART framing, checksums, and representation tests.
 
 ## Reference
 
