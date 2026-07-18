@@ -80,6 +80,8 @@ the decisions and failure modes that a declaration alone cannot express.
    safe fake-flash gates, hardware boundaries, and failure interpretation.
 23. [Public API evolution](public-api-evolution.md) — layer placement,
    compatibility, typed errors, bridge synchronization, and contributor gates.
+24. [Resource ownership](resource-ownership.md) — pins, buses, DMA, USB,
+   interrupts, watchdogs, concurrency, and handoff order.
 
 ## Reference
 
