@@ -74,6 +74,8 @@ the decisions and failure modes that a declaration alone cannot express.
 20. [Observability and diagnostics](observability-and-diagnostics.md) —
    connection-independent reporting, byte protocols, bounded logging, and
    evidence capture.
+21. [Custom-board support](custom-board-support.md) — recognized versus custom
+   metadata, explicit LED handling, chip selection, and validation boundaries.
 
 ## Reference
 
