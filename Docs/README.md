@@ -57,6 +57,8 @@ the decisions and failure modes that a declaration alone cannot express.
    firmware builds, CMake inputs, SDK/compiler selection, USB options, and evidence.
 12. [I2C and SPI transactions](i2c-and-spi-transactions.md) — bus framing,
    chip-select lifetime, transfer formats, timeouts, and physical proof.
+13. [Hardware validation](hardware-validation.md) — host, firmware, fake-flash,
+   USB-echo, and physical-peripheral evidence with safety boundaries.
 
 ## Reference
 
