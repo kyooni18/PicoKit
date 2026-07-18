@@ -91,6 +91,7 @@ The maintained documentation is organized by workflow and peripheral:
 - [Explained examples](Docs/examples.md)
 - [Application design](Docs/application-design.md)
 - [Board and pin planning](Docs/board-and-pin-planning.md)
+- [Failure diagnosis](Docs/failure-diagnosis.md)
 - [Hardware guide](Docs/hardware-guide.md)
 - [USB serial and UART](Docs/serial-and-uart.md)
 - [PWM, ADC, I2C, and SPI](Docs/buses-and-analog.md)

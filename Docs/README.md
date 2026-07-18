@@ -33,21 +33,23 @@ the decisions and failure modes that a declaration alone cannot express.
 
 ## Focused guides
 
-5. [USB serial and UART](serial-and-uart.md) — byte I/O, connection behavior,
+1. [USB serial and UART](serial-and-uart.md) — byte I/O, connection behavior,
    timeouts, pin mappings, DMA, and monitor workflow.
-6. [PWM, ADC, I2C, and SPI](buses-and-analog.md) — configuration, transactions,
+2. [PWM, ADC, I2C, and SPI](buses-and-analog.md) — configuration, transactions,
    repeated START, frame widths, chip select, and DMA transfers.
-7. [Runtime and testing](runtime-and-testing.md) — ownership, host behavior,
+3. [Runtime and testing](runtime-and-testing.md) — ownership, host behavior,
    fakes, validation gates, hardware tests, and deliberate limits.
-8. [External libraries](external-libraries.md) — dependency files, Clang
+4. [External libraries](external-libraries.md) — dependency files, Clang
    modules, C/C++ adapters, callbacks, migration, and reproducibility.
-9. [Performance](performance.md) — fast paths, benchmark fixture, measurement
+5. [Performance](performance.md) — fast paths, benchmark fixture, measurement
    method, DMA interpretation, and physical validation.
+6. [Failure diagnosis](failure-diagnosis.md) — classify configuration, build,
+   flash, USB, and peripheral failures by the strongest available evidence.
 
 ## Reference
 
-10. [API reference](api-reference.md) — complete public declaration surface.
-11. [Integration notes](integration.md) — upgrade-oriented map of the C/C++
+1. [API reference](api-reference.md) — complete public declaration surface.
+2. [Integration notes](integration.md) — upgrade-oriented map of the C/C++
    boundary, lockfiles, migration, DMA, and measurement.
 
 ## Source-of-truth rule
