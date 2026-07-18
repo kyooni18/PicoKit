@@ -49,6 +49,8 @@ the decisions and failure modes that a declaration alone cannot express.
    prepared-buffer transfers, channel ownership, timeout cleanup, and sizing.
 8. [GPIO and reset sequencing](gpio-and-reset-sequencing.md) — electrical
    settings, glitch-free startup, active-level pulses, and physical verification.
+9. [Interrupts and watchdog](interrupts-and-watchdog.md) — coalesced edge
+   delivery, foreground debounce, healthy-loop feeding, and board limits.
 
 ## Reference
 
