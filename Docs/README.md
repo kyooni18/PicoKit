@@ -67,6 +67,8 @@ the decisions and failure modes that a declaration alone cannot express.
    Swift, and C-bridge map agreement, chip-family differences, and diagnosis.
 17. [Timing and deadlines](timing-and-deadlines.md) — delays, operation
    timeouts, application budgets, watchdog windows, and host timing limits.
+18. [Peripheral recovery](peripheral-recovery.md) — typed failure policy,
+   bounded retries, reset sequencing, safe outputs, and bus resynchronization.
 
 ## Reference
 
