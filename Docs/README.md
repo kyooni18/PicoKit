@@ -88,6 +88,8 @@ the decisions and failure modes that a declaration alone cannot express.
    widths, UART framing, checksums, and representation tests.
 27. [Boot sequencing](boot-sequencing.md) — safe output levels, reset and power
    order, device probes, USB policy, and watchdog startup.
+28. [Memory discipline](memory-discipline.md) — interrupt allocation rules,
+   reusable buffers, DMA and C pointer lifetimes, and diagnostic cost.
 
 ## Reference
 
