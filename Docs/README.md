@@ -65,6 +65,8 @@ the decisions and failure modes that a declaration alone cannot express.
    serial buffering, host-only seams, and evidence boundaries.
 16. [Peripheral pin validation](peripheral-pin-validation.md) — SDK-header,
    Swift, and C-bridge map agreement, chip-family differences, and diagnosis.
+17. [Timing and deadlines](timing-and-deadlines.md) — delays, operation
+   timeouts, application budgets, watchdog windows, and host timing limits.
 
 ## Reference
 
