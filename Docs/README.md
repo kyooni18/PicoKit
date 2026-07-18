@@ -47,6 +47,8 @@ the decisions and failure modes that a declaration alone cannot express.
    flash, USB, and peripheral failures by the strongest available evidence.
 7. [DMA and buffer lifecycle](dma-and-buffer-lifecycle.md) — synchronous
    prepared-buffer transfers, channel ownership, timeout cleanup, and sizing.
+8. [GPIO and reset sequencing](gpio-and-reset-sequencing.md) — electrical
+   settings, glitch-free startup, active-level pulses, and physical verification.
 
 ## Reference
 
