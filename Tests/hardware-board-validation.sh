@@ -5,6 +5,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 script="$root/Tests/integration/generated-project.sh"
 workflow="$root/.github/workflows/ci.yml"
 usb_script="$root/Tests/integration/usb-disabled.sh"
+usb_status_script="$root/Tests/integration/usb-serial-status-firmware.sh"
 riscv_script="$root/Tests/integration/riscv-firmware.sh"
 cmake_options_script="$root/Tests/integration/cmake-options.sh"
 gpio_facade_host="$root/Tests/gpio-facade-host.sh"
@@ -33,6 +34,7 @@ test -x "$root/Tests/integration/direct-cmake.sh"
 test -x "$root/Tests/integration/compiler-discovery.sh"
 test -x "$cmake_options_script"
 test -x "$gpio_facade_host"
+test -x "$usb_status_script"
 grep -Fq 'run: sh Tests/gpio-facade-host.sh' "$workflow"
 grep -Fq 'run: sh Tests/integration/direct-cmake.sh' "$workflow"
 grep -Fq 'run: sh Tests/integration/compiler-discovery.sh' "$workflow"
@@ -59,6 +61,7 @@ for board in pico pico_w pico2 pico2_w; do
     grep -Fq "PICO_TEST_BOARD=$board sh Tests/integration/generated-project.sh" "$workflow"
 done
 grep -Fq 'for board in pico pico_w pico2 pico2_w; do' "$usb_script"
+grep -Fq 'run: sh Tests/integration/usb-serial-status-firmware.sh' "$workflow"
 grep -Fq -- '-DPICOKIT_BRIDGE_WARNINGS=ON' "$riscv_script"
 
 echo "PicoKit hardware board-selection validation passed"

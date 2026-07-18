@@ -98,6 +98,8 @@ jobs:
         run: sh Tests/integration/generated-blink.sh
       - name: Verify USB-disabled firmware
         run: sh Tests/integration/usb-disabled.sh
+      - name: Verify USB serial status firmware
+        run: sh Tests/integration/usb-serial-status-firmware.sh
       - name: Verify generated project (RP2040)
         run: PICO_TEST_BOARD=pico sh Tests/integration/generated-project.sh
       - name: Verify generated project (RP2040 wireless)
