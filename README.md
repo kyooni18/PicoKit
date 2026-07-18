@@ -108,6 +108,7 @@ The maintained documentation is organized by workflow and peripheral:
 - [Observability and diagnostics](Docs/observability-and-diagnostics.md)
 - [Custom-board support](Docs/custom-board-support.md)
 - [CI validation](Docs/ci-validation.md)
+- [Public API evolution](Docs/public-api-evolution.md)
 - [Hardware guide](Docs/hardware-guide.md)
 - [USB serial and UART](Docs/serial-and-uart.md)
 - [PWM, ADC, I2C, and SPI](Docs/buses-and-analog.md)

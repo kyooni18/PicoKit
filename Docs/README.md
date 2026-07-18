@@ -78,6 +78,8 @@ the decisions and failure modes that a declaration alone cannot express.
    metadata, explicit LED handling, chip selection, and validation boundaries.
 22. [CI validation](ci-validation.md) — host architectures, firmware matrix,
    safe fake-flash gates, hardware boundaries, and failure interpretation.
+23. [Public API evolution](public-api-evolution.md) — layer placement,
+   compatibility, typed errors, bridge synchronization, and contributor gates.
 
 ## Reference
 
