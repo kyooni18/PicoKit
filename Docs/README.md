@@ -76,6 +76,8 @@ the decisions and failure modes that a declaration alone cannot express.
    evidence capture.
 21. [Custom-board support](custom-board-support.md) — recognized versus custom
    metadata, explicit LED handling, chip selection, and validation boundaries.
+22. [CI validation](ci-validation.md) — host architectures, firmware matrix,
+   safe fake-flash gates, hardware boundaries, and failure interpretation.
 
 ## Reference
 
