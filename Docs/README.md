@@ -53,6 +53,8 @@ the decisions and failure modes that a declaration alone cannot express.
    delivery, foreground debounce, healthy-loop feeding, and board limits.
 10. [ADC and PWM](analog-and-pwm.md) — raw sampling, frequency quantization,
    counter units, duty scaling, and backlight polarity.
+11. [Firmware build and bridge](firmware-build-and-bridge.md) — host versus
+   firmware builds, CMake inputs, SDK/compiler selection, USB options, and evidence.
 
 ## Reference
 
