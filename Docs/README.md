@@ -24,26 +24,30 @@ the decisions and failure modes that a declaration alone cannot express.
    layout, build, flash, monitor, API-level choice, and troubleshooting.
 2. [Explained examples](examples.md) — complete blink, button, serial, PWM,
    ADC, I2C, SPI, interrupt, watchdog, and host-test programs.
-3. [Hardware guide](hardware-guide.md) — core values, GPIO, timing, ownership,
+3. [Application design](application-design.md) — structure a growing firmware
+   loop, choose failure policies, own peripherals, and verify behavior.
+4. [Board and pin planning](board-and-pin-planning.md) — current RP2040/RP2350
+   board mapping, UART/I2C/SPI pin tables, conflicts, and physical verification.
+5. [Hardware guide](hardware-guide.md) — core values, GPIO, timing, ownership,
    interrupts, watchdog, and an overview of every peripheral.
 
 ## Focused guides
 
-4. [USB serial and UART](serial-and-uart.md) — byte I/O, connection behavior,
+5. [USB serial and UART](serial-and-uart.md) — byte I/O, connection behavior,
    timeouts, pin mappings, DMA, and monitor workflow.
-5. [PWM, ADC, I2C, and SPI](buses-and-analog.md) — configuration, transactions,
+6. [PWM, ADC, I2C, and SPI](buses-and-analog.md) — configuration, transactions,
    repeated START, frame widths, chip select, and DMA transfers.
-6. [Runtime and testing](runtime-and-testing.md) — ownership, host behavior,
+7. [Runtime and testing](runtime-and-testing.md) — ownership, host behavior,
    fakes, validation gates, hardware tests, and deliberate limits.
-7. [External libraries](external-libraries.md) — dependency files, Clang
+8. [External libraries](external-libraries.md) — dependency files, Clang
    modules, C/C++ adapters, callbacks, migration, and reproducibility.
-8. [Performance](performance.md) — fast paths, benchmark fixture, measurement
+9. [Performance](performance.md) — fast paths, benchmark fixture, measurement
    method, DMA interpretation, and physical validation.
 
 ## Reference
 
-9. [API reference](api-reference.md) — complete public declaration surface.
-10. [Integration notes](integration.md) — upgrade-oriented map of the C/C++
+10. [API reference](api-reference.md) — complete public declaration surface.
+11. [Integration notes](integration.md) — upgrade-oriented map of the C/C++
    boundary, lockfiles, migration, DMA, and measurement.
 
 ## Source-of-truth rule
