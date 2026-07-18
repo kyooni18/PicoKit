@@ -110,6 +110,7 @@ The maintained documentation is organized by workflow and peripheral:
 - [CI validation](Docs/ci-validation.md)
 - [Public API evolution](Docs/public-api-evolution.md)
 - [Resource ownership](Docs/resource-ownership.md)
+- [Host portability](Docs/host-portability.md)
 - [Hardware guide](Docs/hardware-guide.md)
 - [USB serial and UART](Docs/serial-and-uart.md)
 - [PWM, ADC, I2C, and SPI](Docs/buses-and-analog.md)

@@ -82,6 +82,8 @@ the decisions and failure modes that a declaration alone cannot express.
    compatibility, typed errors, bridge synchronization, and contributor gates.
 24. [Resource ownership](resource-ownership.md) — pins, buses, DMA, USB,
    interrupts, watchdogs, concurrency, and handoff order.
+25. [Host portability](host-portability.md) — Foundation-free targets,
+   conditional SDK paths, fake seams, architecture coverage, and evidence.
 
 ## Reference
 
