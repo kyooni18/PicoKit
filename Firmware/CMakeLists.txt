@@ -147,6 +147,17 @@ message(STATUS "PicoKit compiled board: ${PICO_BOARD} (${PICOKIT_COMPILED_BOARD}
 set(CMAKE_Swift_COMPILATION_MODE wholemodule)
 set(PICOKIT_SWIFT_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/picokit-swift-modules")
 file(MAKE_DIRECTORY "${PICOKIT_SWIFT_MODULE_DIRECTORY}")
+# Keep Clang's module cache inside the build tree by default. The host Swift
+# installation may expose a read-only global cache (notably SwiftShims), which
+# otherwise makes an otherwise valid firmware configure fail before source
+# compilation. Allow CI or a shared build cache to override this location.
+if(DEFINED ENV{PICOKIT_SWIFT_MODULE_CACHE} AND NOT "$ENV{PICOKIT_SWIFT_MODULE_CACHE}" STREQUAL "")
+    set(PICOKIT_SWIFT_MODULE_CACHE "$ENV{PICOKIT_SWIFT_MODULE_CACHE}")
+else()
+    set(PICOKIT_SWIFT_MODULE_CACHE "${CMAKE_BINARY_DIR}/swift-module-cache")
+endif()
+file(MAKE_DIRECTORY "${PICOKIT_SWIFT_MODULE_CACHE}")
+string(APPEND CMAKE_Swift_FLAGS " -module-cache-path ${PICOKIT_SWIFT_MODULE_CACHE}")
 # CMake's Swift compiler probe links a host macOS executable. That probe is
 # incompatible with the Embedded Swift toolchain: it can compile an object,
 # but it must not try to link against the host `System` library. Mark the

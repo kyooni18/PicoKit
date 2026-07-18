@@ -60,10 +60,16 @@ public final class PicoI2C {
     }
     let count = try picoKitTransferCount(bytes.count, operation: "I2C write")
     // The Pico SDK rejects zero-length I2C transactions with an assertion.
-    // Treat an empty write as a validated no-op instead of entering that
-    // SDK path; this is also consistent with the transfer APIs' count
-    // semantics.
-    guard count != 0 else { return 0 }
+    // An empty no-STOP write cannot create a meaningful composed transaction,
+    // so reject it before touching the bus. An empty STOP write is a no-op
+    // that clears any pending repeated-START state in the bridge.
+    guard count != 0 else {
+      if !stop { throw PicoKitError.ioFailure(operation: "I2C writeRead", status: -1) }
+      #if PICOKIT_PICO_SDK
+        picokit_i2c_recover(instance.rawValue)
+      #endif
+      return 0
+    }
     #if PICOKIT_PICO_SDK
       let result = bytes.withUnsafeBufferPointer {
         picokit_i2c_write(
@@ -100,10 +106,16 @@ public final class PicoI2C {
       throw PicoKitError.invalidTimeout(timeout.microseconds)
     }
     let transferCount = try picoKitTransferCount(count, operation: "I2C read")
-    // The Pico SDK rejects zero-length I2C transactions with an
-    // assertion. Return the requested empty result without touching the
-    // peripheral.
-    guard transferCount != 0 else { return [] }
+    // The Pico SDK rejects zero-length I2C transactions with an assertion.
+    // A STOP-scoped empty read is a recovery boundary; a no-STOP empty read
+    // is rejected because it cannot represent a useful next phase.
+    guard transferCount != 0 else {
+      if !stop { throw PicoKitError.ioFailure(operation: "I2C read", status: -1) }
+      #if PICOKIT_PICO_SDK
+        picokit_i2c_recover(instance.rawValue)
+      #endif
+      return []
+    }
     #if PICOKIT_PICO_SDK
       var result = [UInt8](repeating: 0, count: count)
       let status = result.withUnsafeMutableBufferPointer {
@@ -140,7 +152,7 @@ public final class PicoI2C {
     // write portion; invalid read arguments must never cause a prefix
     // write as a side effect.
     guard (0x08...0x77).contains(address) else { throw PicoKitError.invalidAddress(address) }
-    guard count >= 0 else { throw PicoKitError.ioFailure(operation: "I2C read", status: -1) }
+    guard count > 0 else { throw PicoKitError.ioFailure(operation: "I2C writeRead", status: -1) }
     guard timeout.microseconds <= UInt64(UInt32.max) else {
       throw PicoKitError.invalidTimeout(timeout.microseconds)
     }
@@ -153,7 +165,11 @@ public final class PicoI2C {
 public enum SPIInstance: UInt32, Sendable { case spi0, spi1 }
 public enum SPIMode: UInt32, CaseIterable, Sendable { case mode0, mode1, mode2, mode3 }
 public enum SPIBitOrder: UInt32, CaseIterable, Sendable {
-  case mostSignificantBitFirst, leastSignificantBitFirst
+  /// RP-series SPI hardware supports this wire order directly.
+  case mostSignificantBitFirst
+  /// Retained for source compatibility; `PicoSPI` rejects it because RP-series
+  /// SPI hardware cannot produce LSB-first frames.
+  case leastSignificantBitFirst
 }
 public enum SPIDataBits: UInt32, CaseIterable, Sendable {
   case eight = 8
@@ -192,9 +208,12 @@ public final class PicoSPI {
   public let miso: PicoPin?
   public let chipSelect: PicoPin?
   private let gpio: PicoGPIO?
+  private let dmaOwnerToken: UInt32
 
   deinit {
-    releaseDMAChannels()
+    #if PICOKIT_PICO_SDK
+      picokit_spi_dma_release(instance.rawValue, dmaOwnerToken)
+    #endif
   }
 
   public init(
@@ -210,6 +229,12 @@ public final class PicoSPI {
     gpio: PicoGPIO? = nil
   ) throws(PicoKitError) {
     try instance.validate(sck: sck, mosi: mosi, miso: miso)
+    // The RP2040/RP2350 PL022 controller only implements MSB-first framing.
+    // Keep the enum case for source compatibility, but fail before touching
+    // the bridge rather than forwarding an SDK-invalid format request.
+    guard bitOrder == .mostSignificantBitFirst else {
+      throw PicoKitError.unavailable("LSB-first SPI")
+    }
     if let chipSelect, chipSelect == sck || chipSelect == mosi || chipSelect == miso {
       throw PicoKitError.invalidPeripheralPin(
         peripheral: "\(instance) chip-select", pin: chipSelect)
@@ -230,6 +255,7 @@ public final class PicoSPI {
       }
       self.instance = instance
       self.actualFrequency = try Frequency.hertz(actual)
+      self.dmaOwnerToken = picokit_dma_owner_token()
       self.dataBits = dataBits
       self.miso = miso
       self.chipSelect = chipSelect
@@ -445,7 +471,10 @@ public final class PicoSPI {
     let count = try picoKitTransferCount(bytes.count, operation: "SPI DMA write")
     #if PICOKIT_PICO_SDK
       let status = bytes.withUnsafeBufferPointer {
-        picokit_spi_write_dma(instance.rawValue, $0.baseAddress, count)
+        picokit_spi_write_dma(instance.rawValue, dmaOwnerToken, $0.baseAddress, count)
+      }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("SPI DMA is owned by another PicoSPI")
       }
       guard status == Int32(count) else {
         throw PicoKitError.ioFailure(operation: "SPI DMA write", status: status)
@@ -465,9 +494,12 @@ public final class PicoSPI {
     #if PICOKIT_PICO_SDK
       let status = bytes.withUnsafeBufferPointer {
         picokit_spi_write_dma_timeout(
-          instance.rawValue, $0.baseAddress, count, timeout.microseconds)
+          instance.rawValue, dmaOwnerToken, $0.baseAddress, count, timeout.microseconds)
       }
       if status == -2 { throw PicoKitError.timedOut(operation: "SPI DMA write") }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("SPI DMA is owned by another PicoSPI")
+      }
       guard status >= 0 else {
         throw PicoKitError.ioFailure(operation: "SPI DMA write", status: status)
       }
@@ -492,8 +524,11 @@ public final class PicoSPI {
       var received = [UInt8](repeating: 0, count: bytes.count)
       let status = bytes.withUnsafeBufferPointer { tx in
         received.withUnsafeMutableBufferPointer { rx in
-          picokit_spi_transfer_dma(instance.rawValue, tx.baseAddress, rx.baseAddress, count)
+          picokit_spi_transfer_dma(instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count)
         }
+      }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("SPI DMA is owned by another PicoSPI")
       }
       guard status == Int32(count) else {
         throw PicoKitError.ioFailure(operation: "SPI 8-bit DMA transfer", status: status)
@@ -517,10 +552,13 @@ public final class PicoSPI {
       let status = bytes.withUnsafeBufferPointer { tx in
         received.withUnsafeMutableBufferPointer { rx in
           picokit_spi_transfer_dma_timeout(
-            instance.rawValue, tx.baseAddress, rx.baseAddress, count, timeout.microseconds)
+            instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count, timeout.microseconds)
         }
       }
       if status == -2 { throw PicoKitError.timedOut(operation: "SPI 8-bit DMA transfer") }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("SPI DMA is owned by another PicoSPI")
+      }
       guard status >= 0 else {
         throw PicoKitError.ioFailure(operation: "SPI 8-bit DMA transfer", status: status)
       }
@@ -542,7 +580,10 @@ public final class PicoSPI {
     let count = try picoKitTransferCount(words.count, operation: "SPI 16-bit DMA write")
     #if PICOKIT_PICO_SDK
       let status = words.withUnsafeBufferPointer {
-        picokit_spi_write16_dma(instance.rawValue, $0.baseAddress, count)
+        picokit_spi_write16_dma(instance.rawValue, dmaOwnerToken, $0.baseAddress, count)
+      }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("SPI DMA is owned by another PicoSPI")
       }
       guard status == Int32(count) else {
         throw PicoKitError.ioFailure(operation: "SPI DMA write", status: status)
@@ -561,9 +602,12 @@ public final class PicoSPI {
     #if PICOKIT_PICO_SDK
       let status = words.withUnsafeBufferPointer {
         picokit_spi_write16_dma_timeout(
-          instance.rawValue, $0.baseAddress, count, timeout.microseconds)
+          instance.rawValue, dmaOwnerToken, $0.baseAddress, count, timeout.microseconds)
       }
       if status == -2 { throw PicoKitError.timedOut(operation: "SPI 16-bit DMA write") }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("SPI DMA is owned by another PicoSPI")
+      }
       guard status >= 0 else {
         throw PicoKitError.ioFailure(operation: "SPI 16-bit DMA write", status: status)
       }
@@ -588,8 +632,11 @@ public final class PicoSPI {
       var received = [UInt16](repeating: 0, count: words.count)
       let status = words.withUnsafeBufferPointer { tx in
         received.withUnsafeMutableBufferPointer { rx in
-          picokit_spi_transfer16_dma(instance.rawValue, tx.baseAddress, rx.baseAddress, count)
+          picokit_spi_transfer16_dma(instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count)
         }
+      }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("SPI DMA is owned by another PicoSPI")
       }
       guard status == Int32(count) else {
         throw PicoKitError.ioFailure(operation: "SPI 16-bit DMA transfer", status: status)
@@ -612,10 +659,13 @@ public final class PicoSPI {
       let status = words.withUnsafeBufferPointer { tx in
         received.withUnsafeMutableBufferPointer { rx in
           picokit_spi_transfer16_dma_timeout(
-            instance.rawValue, tx.baseAddress, rx.baseAddress, count, timeout.microseconds)
+            instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count, timeout.microseconds)
         }
       }
       if status == -2 { throw PicoKitError.timedOut(operation: "SPI 16-bit DMA transfer") }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("SPI DMA is owned by another PicoSPI")
+      }
       guard status >= 0 else {
         throw PicoKitError.ioFailure(operation: "SPI 16-bit DMA transfer", status: status)
       }
@@ -633,7 +683,7 @@ public final class PicoSPI {
   /// reuses them between calls to avoid repeated claim and cleanup work.
   public func releaseDMAChannels() {
     #if PICOKIT_PICO_SDK
-      picokit_spi_dma_release(instance.rawValue)
+      picokit_spi_dma_release(instance.rawValue, dmaOwnerToken)
     #endif
   }
 

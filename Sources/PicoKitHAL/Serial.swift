@@ -139,7 +139,10 @@ public final class USBSerial {
   /// USB serial convenience API for firmware builds. Keep this concrete: calling
   /// a typed-throwing requirement through an existential currently erases it to
   /// `any Error`, which Embedded Swift cannot represent.
-  public final class PicoSerial: @unchecked Sendable {
+  /// USB serial convenience API for one foreground owner. It deliberately has
+  /// no `Sendable` conformance because its initialization and lookahead state
+  /// are mutable.
+  public final class PicoSerial {
     private var isInitialized = false
     private var pendingByte: UInt8?
 
@@ -312,8 +315,9 @@ public final class USBSerial {
     }
   }
 
-  /// USB serial access with no setup ceremony or throwing calls.
-  public final class PicoSerial: @unchecked Sendable {
+  /// USB serial access with no setup ceremony or throwing calls. One owner
+  /// must serialize access; the mutable lookahead byte is not Sendable.
+  public final class PicoSerial {
     private let backend: any PicoSerialBackend
     private var pendingByte: UInt8?
 

@@ -16,6 +16,12 @@ public final class PicoPWM {
   private let channel: UInt32
   private let wrap: UInt32
 
+  deinit {
+    #if PICOKIT_PICO_SDK
+      picokit_pwm_release(pin.rawValue)
+    #endif
+  }
+
   public init(pin: PicoPin, frequency: Frequency) throws(PicoKitError) {
     #if PICOKIT_PICO_SDK
       var slice: UInt32 = 0
@@ -25,6 +31,9 @@ public final class PicoPWM {
       let status = picokit_pwm_init_with_actual_frequency(
         pin.rawValue, frequency.hertz, &slice, &channel, &wrap, &actualFrequency
       )
+      if status == -2 {
+        throw PicoKitError.ownershipConflict("PWM slice already has an incompatible or active channel owner")
+      }
       guard status == 0 else {
         throw PicoKitError.ioFailure(operation: "PWM setup", status: status)
       }

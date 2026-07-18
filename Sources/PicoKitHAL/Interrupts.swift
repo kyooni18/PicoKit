@@ -25,8 +25,9 @@ public final class PicoInterrupts {
     #endif
   }
 
-  /// Disables both rising- and falling-edge delivery for `pin` and clears
-  /// events recorded before the disable took effect.
+  /// Disables both rising- and falling-edge delivery for `pin`, acknowledges
+  /// pending hardware edges, and clears events recorded before the disable
+  /// boundary takes effect.
   public func disable(_ pin: PicoPin) {
     #if PICOKIT_PICO_SDK
       picokit_interrupt_disable(pin.rawValue)

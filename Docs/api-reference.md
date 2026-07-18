@@ -318,8 +318,10 @@ final class PicoSPI {
 ```
 
 `Pico` is stored globally and has an implementation-only `@unchecked
-Sendable` conformance. It provides no locking: keep the facade and each
-underlying hardware resource on one task or core.
+Sendable` conformance. `PicoSerial` intentionally has no `Sendable`
+conformance because it keeps mutable initialization and lookahead state. Neither
+choice provides locking: keep the facade and each underlying hardware resource
+on one task or core.
 
 When `chipSelect` is supplied without `gpio`, firmware creates the GPIO
 controller for the compiled RP2040 or RP2350 target. Pass `gpio` explicitly

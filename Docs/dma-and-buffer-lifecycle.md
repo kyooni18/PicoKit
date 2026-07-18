@@ -19,7 +19,7 @@ CPU work.
 | UART | `writeDMA(_:timeout:)` | 8-bit | none exposed | bounded; timeout aborts the channel |
 | SPI | `writeDMA(_:)` | 8 or 16-bit | received words discarded | unbounded completion wait |
 | SPI | `transferDMA(_:)` | 8 or 16-bit | returned array | unbounded completion wait |
-| SPI | `writeDMA(_:timeout:)` / `transferDMA(_:timeout:)` | 8 or 16-bit | discarded or returned | bounded; timeout cleans up channels |
+| SPI | `writeDMA(_:timeout:)` / `transferDMA(_:timeout:)` | 8 or 16-bit | discarded or returned | bounded; timeout cleans up channels and resets the SPI frame/FIFO state |
 
 SPI is physically full-duplex even for a write. A write-only DMA call uses a
 discard sink for received data so the RX FIFO does not stall; a transfer call
@@ -39,12 +39,13 @@ DMA channels are retained by the bridge for reuse:
 - SPI retains a TX/RX pair per `SPIInstance` and releases them with
   `releaseDMAChannels()` or when the owning `PicoSPI` deinitializes.
 
-This is a reuse optimization, not a general ownership registry. Create one
-application owner for each UART/SPI instance, keep all calls on that owner, and
-release it when the resource's lifetime ends. Do not run two independent
-objects for the same peripheral instance or call its DMA methods concurrently.
-PicoKit's hardware objects are single-owner foreground resources; `Sendable`
-does not turn them into synchronized queues.
+This is a reuse optimization, not a general ownership registry. The bridge
+serializes transfer, cleanup, and channel-claim work separately for each UART
+or SPI instance, so cleanup cannot unclaim a channel during an active transfer.
+Create one application owner for each instance anyway: serialization prevents a
+channel-lifetime race, but it cannot make two independent protocol users share
+a peripheral safely. PicoKit's hardware objects are single-owner foreground
+resources; `Sendable` does not turn them into synchronized queues.
 
 ```swift
 let uart = try PicoUART(

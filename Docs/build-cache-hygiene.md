@@ -153,6 +153,14 @@ firmware gate when the change touches generated source or board selection. A
 clean build proves reproducibility for that run; it does not prove hardware
 boot or external-device behavior.
 
+## Swift module cache location
+
+Firmware CMake builds keep Clang and Swift module artifacts under the selected
+build directory so a read-only global Swift cache cannot prevent compilation.
+For a shared CI cache, set `PICOKIT_SWIFT_MODULE_CACHE` to a writable directory
+before configuring. The default is disposable and is removed with the rest of
+the temporary build tree.
+
 ## Related documents
 
 - [Firmware build and bridge](firmware-build-and-bridge.md) — CMake inputs and

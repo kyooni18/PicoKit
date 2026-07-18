@@ -130,6 +130,14 @@ struct PicoKitHostTests {
       _ = try PicoI2C(.i2c0, frequency: busFrequency, sda: .gpio0, scl: .gpio0)
     }
     requireError(
+      .ioFailure(operation: "I2C writeRead", status: -1),
+      "empty composed I2C read issued a prefix write"
+    ) {
+      _ = try PicoI2C(
+        .i2c0, frequency: busFrequency, sda: .gpio0, scl: .gpio1
+      ).writeRead(address: 0x48, bytes: [0], count: 0, timeout: .milliseconds(1))
+    }
+    requireError(
       .invalidPeripheralPin(peripheral: "uart0 TX on rp2040", pin: .gpio2),
       "RP2040 UART0 accepted an invalid TX pin"
     ) {
@@ -176,6 +184,14 @@ struct PicoKitHostTests {
       "SPI accepted one pin for multiple data roles"
     ) {
       _ = try PicoSPI(.spi0, frequency: busFrequency, sck: .gpio2, mosi: .gpio2, miso: .gpio0)
+    }
+    requireError(
+      .unavailable("LSB-first SPI"),
+      "LSB-first SPI reached the hardware bridge"
+    ) {
+      _ = try PicoSPI(
+        .spi0, frequency: busFrequency, sck: .gpio2, mosi: .gpio3,
+        bitOrder: .leastSignificantBitFirst)
     }
     requireError(
       .ownershipConflict("uart0 TX and RX must use different pins"),

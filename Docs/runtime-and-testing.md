@@ -49,12 +49,12 @@ Give each hardware resource one logical owner. Do not create competing active
 instances for the same UART, I2C controller, SPI controller, PWM slice,
 watchdog, DMA channel set, or shared USB stdio state.
 
-Peripheral objects do not provide synchronization. `Pico` and `PicoSerial`
-being `@unchecked Sendable` allows embedded compilation; it does not make the
+Peripheral objects do not provide synchronization. `Pico` is `@unchecked
+Sendable` only to support global firmware storage; `PicoSerial` and `PicoGPIO`
+deliberately have no `Sendable` conformance. None of those choices make the
 hardware safe for concurrent access from tasks, cores, or interrupt handlers.
-`PicoGPIO` deliberately has no `Sendable` conformance. Its write and toggle
-operations use atomic SDK registers, but configuration and reset pulses remain
-single-owner sequences.
+GPIO write and toggle operations use atomic SDK registers, but configuration
+and reset pulses remain single-owner sequences.
 
 ## Interrupt model
 

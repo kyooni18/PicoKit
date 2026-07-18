@@ -335,8 +335,10 @@ write that makes partial progress before its deadline reports
 
 ## PWM, ADC, I2C, and SPI
 
-Create one `PicoPWM` per output pin. `setDutyCycle` uses the full `UInt16`
-range; `setCounterLevel` is the fast path for already-scaled PWM units;
+Create one `PicoPWM` per output pin. GPIOs sharing a PWM slice may coexist only
+when they use the same quantized carrier frequency, and a second owner of the
+same slice channel is rejected. `setDutyCycle` uses the full `UInt16` range;
+`setCounterLevel` is the fast path for already-scaled PWM units;
 `analogWrite(0, UInt8(128), using: pwm)` is the convenient 8-bit form.
 `PicoADC` reads `.gpio26` through `.gpio29` or `.temperature` as raw `UInt16`
 values; voltage conversion remains application policy.
@@ -391,9 +393,11 @@ let bytes = try i2c.writeRead(
 )
 ```
 
-Empty writes and zero-length reads are safe validated no-ops. `actualFrequency`
-reports the divider-quantized bus speed. Keep device-specific register and
-transaction policy in a focused driver above the bus instance.
+Empty writes and direct zero-length reads are safe validated no-ops.
+`writeRead` requires a nonzero response count and rejects an empty response
+before it sends a no-STOP prefix. `actualFrequency` reports the
+divider-quantized bus speed. Keep device-specific register and transaction
+policy in a focused driver above the bus instance.
 
 SPI is full duplex when MISO is present. A typical device-owner sequence is:
 

@@ -66,9 +66,11 @@ range checks next to the protocol field rather than relying on a memory cast.
 ## SPI words are frames, not a protocol encoding
 
 `PicoSPI` supports `SPIDataBits.eight` and `.sixteen`, with matching byte and
-`UInt16` overloads. `SPIBitOrder` controls the order of bits within a frame;
-it does not tell the device whether a multi-byte register value is big-endian
-or little-endian. Confirm all of these from the device datasheet:
+`UInt16` overloads. RP-series SPI hardware supports only
+`.mostSignificantBitFirst`; requesting `.leastSignificantBitFirst` throws
+`PicoKitError.unavailable` before the peripheral is configured. Bit order does
+not tell the device whether a multi-byte register value is big-endian or
+little-endian. Confirm all of these from the device datasheet:
 
 ```swift
 let spi = try PicoSPI(

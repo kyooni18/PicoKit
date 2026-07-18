@@ -12,12 +12,12 @@ Use a resource ledger next to the application configuration:
 | Resource | PicoKit owner | Important lifetime rule |
 | --- | --- | --- |
 | GPIO pin and electrical configuration | `PicoGPIO` or a driver using `DigitalIO` | do not reconfigure or write from a competing driver, task, core, or IRQ |
-| PWM pin/slice/channel | `PicoPWM` or `PicoBacklight` | construct once and reuse; keep the pin with the owning driver |
+| PWM pin/slice/channel | `PicoPWM` or `PicoBacklight` | construct once and reuse; the bridge rejects duplicate channels and incompatible shared-slice frequencies |
 | ADC selector and channels | `PicoADC` | share one application owner for sampling policy and calibration |
 | I2C controller | `PicoI2C` | serialize transactions and keep SDA/SCL wiring with the bus owner |
 | SPI controller and chip select | `PicoSPI` plus its optional GPIO | keep select/deselect and the complete frame in one owner |
 | UART controller | `PicoUART` | one owner for framing, reads, writes, and DMA |
-| DMA channel(s) | UART/SPI DMA operation | release explicitly when the resource is no longer needed |
+| DMA channel(s) | UART/SPI DMA operation | a bridge claim token rejects competing peripheral objects; release explicitly when the owner is done |
 | GPIO interrupt event word | `PicoInterrupts` | one foreground consumer; disabling clears pending events |
 | watchdog | `PicoWatchdog` | enable and update from the one healthy foreground loop |
 | USB stdio | `Serial`, `PicoSerial`, or `USBSerial` | treat connection state as shared external state and serialize writes |
@@ -30,9 +30,9 @@ ownership explicitly.
 ## `Sendable` is not a lock
 
 `PicoPin`, `Duration`, `Frequency`, and enum values are immutable value types
-and are safe to copy. `PicoGPIO` deliberately has no `Sendable` conformance.
-`PicoSerial` and `Pico` use `@unchecked Sendable` where global firmware storage
-requires it; that permits compilation but does not add synchronization.
+and are safe to copy. `PicoGPIO` and `PicoSerial` deliberately have no
+`Sendable` conformance. `Pico` uses `@unchecked Sendable` for global firmware
+storage; that permits compilation but does not add synchronization.
 
 Keep hardware calls in one foreground owner:
 
@@ -66,8 +66,10 @@ implicit lock.
 ## DMA ownership has two lifetimes
 
 DMA has both an object lifetime and a channel lifetime. `PicoUART` and
-`PicoSPI` retain channels after DMA operations so they can reuse them. Release
-them explicitly at a known handoff point:
+`PicoSPI` receive a bridge claim token and retain channels after DMA operations
+so they can reuse them. A second object for the same controller receives a
+typed ownership conflict instead of reconfiguring or releasing the first
+object's channels. Release them explicitly at a known handoff point:
 
 ```swift
 let uart = try PicoUART(

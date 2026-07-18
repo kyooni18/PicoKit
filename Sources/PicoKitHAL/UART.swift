@@ -39,11 +39,14 @@ extension UARTInstance {
 public final class PicoUART {
   public let instance: UARTInstance
   public let chip: PicoChip
+  private let dmaOwnerToken: UInt32
   /// The baud rate actually selected by the SDK.
   public let actualBaudRate: Frequency
 
   deinit {
-    releaseDMAChannel()
+    #if PICOKIT_PICO_SDK
+      picokit_uart_dma_release(instance.rawValue, dmaOwnerToken)
+    #endif
   }
 
   public init(
@@ -68,6 +71,7 @@ public final class PicoUART {
       }
       self.instance = instance
       self.chip = chip
+      self.dmaOwnerToken = picokit_dma_owner_token()
       self.actualBaudRate = try Frequency.hertz(actualBaudRate)
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
@@ -102,7 +106,10 @@ public final class PicoUART {
     let count = try picoKitTransferCount(bytes.count, operation: "UART DMA write")
     #if PICOKIT_PICO_SDK
       let status = bytes.withUnsafeBufferPointer {
-        picokit_uart_write_dma(instance.rawValue, $0.baseAddress, count)
+        picokit_uart_write_dma(instance.rawValue, dmaOwnerToken, $0.baseAddress, count)
+      }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("UART DMA is owned by another PicoUART")
       }
       guard status == Int32(count) else {
         throw PicoKitError.ioFailure(operation: "UART DMA write", status: status)
@@ -120,9 +127,12 @@ public final class PicoUART {
     #if PICOKIT_PICO_SDK
       let status = bytes.withUnsafeBufferPointer {
         picokit_uart_write_dma_timeout(
-          instance.rawValue, $0.baseAddress, count, timeout.microseconds)
+          instance.rawValue, dmaOwnerToken, $0.baseAddress, count, timeout.microseconds)
       }
       if status == -2 { throw PicoKitError.timedOut(operation: "UART DMA write") }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("UART DMA is owned by another PicoUART")
+      }
       guard status >= 0 else {
         throw PicoKitError.ioFailure(operation: "UART DMA write", status: status)
       }
@@ -140,7 +150,7 @@ public final class PicoUART {
   /// channel between writes to avoid repeated resource-claim overhead.
   public func releaseDMAChannel() {
     #if PICOKIT_PICO_SDK
-      picokit_uart_dma_release(instance.rawValue)
+      picokit_uart_dma_release(instance.rawValue, dmaOwnerToken)
     #endif
   }
 

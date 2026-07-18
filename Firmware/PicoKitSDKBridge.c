@@ -10,6 +10,7 @@
 #include "hardware/i2c.h"
 #include "hardware/pwm.h"
 #include "hardware/spi.h"
+#include "hardware/sync.h"
 #include "hardware/uart.h"
 #include "hardware/watchdog.h"
 #include "pico/error.h"
@@ -48,11 +49,21 @@ static bool picokit_adc_gpio_initialized[NUM_ADC_CHANNELS - 1];
 static uint32_t picokit_adc_channel = UINT32_MAX;
 static bool picokit_adc_temperature_enabled;
 static critical_section_t picokit_adc_critical_section;
+static critical_section_t picokit_pwm_critical_section;
+static uint32_t picokit_pwm_initialization_state;
+static uint32_t picokit_pwm_slice_frequency[NUM_PWM_SLICES];
+static uint8_t picokit_pwm_slice_channel_claims[NUM_PWM_SLICES];
 static uint32_t picokit_stdio_initialization_state;
 static uint32_t picokit_status_led_initialization_state;
 static int picokit_uart_dma_channels[2] = {-1, -1};
 static int picokit_spi_dma_tx_channels[2] = {-1, -1};
 static int picokit_spi_dma_rx_channels[2] = {-1, -1};
+static uint32_t picokit_uart_dma_owners[2];
+static uint32_t picokit_spi_dma_owners[2];
+static critical_section_t picokit_uart_dma_critical_sections[2];
+static critical_section_t picokit_spi_dma_critical_sections[2];
+static uint32_t picokit_dma_initialization_state;
+static uint32_t picokit_dma_owner_counter;
 
 static bool picokit_valid_gpio(uint32_t pin) { return pin < PICOKIT_GPIO_COUNT; }
 
@@ -163,6 +174,35 @@ static bool picokit_dma_channel_has_error(uint channel) {
     return (status & (DMA_CH0_CTRL_TRIG_AHB_ERROR_BITS |
                       DMA_CH0_CTRL_TRIG_READ_ERROR_BITS |
                       DMA_CH0_CTRL_TRIG_WRITE_ERROR_BITS)) != 0;
+}
+
+static void picokit_dma_prepare(void) {
+    for (;;) {
+        uint32_t state = __atomic_load_n(&picokit_dma_initialization_state, __ATOMIC_ACQUIRE);
+        if (state == 2u) return;
+        if (state == 0u) {
+            uint32_t expected = 0u;
+            if (__atomic_compare_exchange_n(
+                    &picokit_dma_initialization_state, &expected, 1u, false,
+                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                for (uint32_t instance = 0; instance < 2; ++instance) {
+                    critical_section_init(&picokit_uart_dma_critical_sections[instance]);
+                    critical_section_init(&picokit_spi_dma_critical_sections[instance]);
+                }
+                __atomic_store_n(&picokit_dma_initialization_state, 2u, __ATOMIC_RELEASE);
+                return;
+            }
+        }
+        tight_loop_contents();
+    }
+}
+
+uint32_t picokit_dma_owner_token(void) {
+    uint32_t token = __atomic_add_fetch(&picokit_dma_owner_counter, 1u, __ATOMIC_RELAXED);
+    // Zero is reserved for an unowned peripheral. The counter wraps only
+    // after billions of object lifetimes, but preserve that invariant anyway.
+    if (token == 0u) token = __atomic_add_fetch(&picokit_dma_owner_counter, 1u, __ATOMIC_RELAXED);
+    return token;
 }
 
 static void picokit_gpio_irq(uint gpio, uint32_t events) {
@@ -316,6 +356,7 @@ int32_t picokit_uart_write(uint32_t instance, const uint8_t *bytes, uint32_t cou
     while (transferred < count) {
         while (!uart_is_writable(uart)) {
             if (picokit_expired(deadline)) return transferred == 0 ? -2 : (int32_t)transferred;
+            tight_loop_contents();
         }
         uart_get_hw(uart)->dr = bytes[transferred++];
     }
@@ -364,40 +405,67 @@ static int32_t picokit_dma_write(
             dma_channel_cleanup((uint)channel);
             return -2;
         }
+        tight_loop_contents();
     }
     return (int32_t)count;
 }
-int32_t picokit_uart_write_dma(uint32_t instance, const uint8_t *bytes, uint32_t count) {
+int32_t picokit_uart_write_dma(uint32_t instance, uint32_t owner, const uint8_t *bytes, uint32_t count) {
     uart_inst_t *uart = picokit_uart(instance);
-    if (!uart) return -1;
-    return picokit_dma_write(
-        &picokit_uart_dma_channels[instance], &uart_get_hw(uart)->dr,
-        bytes, count, DMA_SIZE_8, uart_get_dreq(uart, true), false, 0
-    );
+    if (!uart || owner == 0u) return -1;
+    picokit_dma_prepare();
+    critical_section_enter_blocking(&picokit_uart_dma_critical_sections[instance]);
+    int32_t result = -3;
+    if (picokit_uart_dma_owners[instance] == 0u || picokit_uart_dma_owners[instance] == owner) {
+        picokit_uart_dma_owners[instance] = owner;
+        result = picokit_dma_write(
+            &picokit_uart_dma_channels[instance], &uart_get_hw(uart)->dr,
+            bytes, count, DMA_SIZE_8, uart_get_dreq(uart, true), false, 0
+        );
+    }
+    critical_section_exit(&picokit_uart_dma_critical_sections[instance]);
+    return result;
 }
 int32_t picokit_uart_write_dma_timeout(
-    uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us
+    uint32_t instance, uint32_t owner, const uint8_t *bytes, uint32_t count, uint64_t timeout_us
 ) {
     uart_inst_t *uart = picokit_uart(instance);
-    if (!uart) return -1;
-    return picokit_dma_write(
-        &picokit_uart_dma_channels[instance], &uart_get_hw(uart)->dr,
-        bytes, count, DMA_SIZE_8, uart_get_dreq(uart, true), true, timeout_us
-    );
+    if (!uart || owner == 0u) return -1;
+    picokit_dma_prepare();
+    critical_section_enter_blocking(&picokit_uart_dma_critical_sections[instance]);
+    int32_t result = -3;
+    if (picokit_uart_dma_owners[instance] == 0u || picokit_uart_dma_owners[instance] == owner) {
+        picokit_uart_dma_owners[instance] = owner;
+        result = picokit_dma_write(
+            &picokit_uart_dma_channels[instance], &uart_get_hw(uart)->dr,
+            bytes, count, DMA_SIZE_8, uart_get_dreq(uart, true), true, timeout_us
+        );
+    }
+    critical_section_exit(&picokit_uart_dma_critical_sections[instance]);
+    return result;
 }
-void picokit_uart_dma_release(uint32_t instance) {
-    if (instance > 1) return;
-    int channel = picokit_uart_dma_channels[instance];
-    if (channel < 0) return;
-    dma_channel_cleanup((uint)channel);
-    dma_channel_unclaim((uint)channel);
-    picokit_uart_dma_channels[instance] = -1;
+void picokit_uart_dma_release(uint32_t instance, uint32_t owner) {
+    if (instance > 1 || owner == 0u) return;
+    picokit_dma_prepare();
+    critical_section_enter_blocking(&picokit_uart_dma_critical_sections[instance]);
+    if (picokit_uart_dma_owners[instance] == owner) {
+        int channel = picokit_uart_dma_channels[instance];
+        if (channel >= 0) {
+            dma_channel_cleanup((uint)channel);
+            dma_channel_unclaim((uint)channel);
+            picokit_uart_dma_channels[instance] = -1;
+        }
+        picokit_uart_dma_owners[instance] = 0u;
+    }
+    critical_section_exit(&picokit_uart_dma_critical_sections[instance]);
 }
 int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us) {
     uart_inst_t *uart = picokit_uart(instance);
     if (!uart || !byte) return -1;
     uint64_t deadline = picokit_deadline_after(timeout_us);
-    while (!uart_is_readable(uart)) if (picokit_expired(deadline)) return -2;
+    while (!uart_is_readable(uart)) {
+        if (picokit_expired(deadline)) return -2;
+        tight_loop_contents();
+    }
     *byte = (uint8_t)uart_get_hw(uart)->dr;
     return 0;
 }
@@ -438,6 +506,24 @@ void picokit_status_led_toggle(void) { status_led_set_state(!status_led_get_stat
 uint64_t picokit_time_us(void) { return time_us_64(); }
 void picokit_sleep_us(uint64_t microseconds) { sleep_us(microseconds); }
 
+static void picokit_pwm_prepare(void) {
+    for (;;) {
+        uint32_t state = __atomic_load_n(&picokit_pwm_initialization_state, __ATOMIC_ACQUIRE);
+        if (state == 2u) return;
+        if (state == 0u) {
+            uint32_t expected = 0u;
+            if (__atomic_compare_exchange_n(
+                    &picokit_pwm_initialization_state, &expected, 1u, false,
+                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                critical_section_init(&picokit_pwm_critical_section);
+                __atomic_store_n(&picokit_pwm_initialization_state, 2u, __ATOMIC_RELEASE);
+                return;
+            }
+        }
+        tight_loop_contents();
+    }
+}
+
 static int32_t picokit_pwm_init_impl(
     uint32_t pin, uint32_t frequency_hz, uint32_t *slice_out, uint32_t *channel_out,
     uint32_t *wrap_out, uint32_t *actual_frequency_out
@@ -452,21 +538,53 @@ static int32_t picokit_pwm_init_impl(
     uint64_t denominator = (uint64_t)divider * frequency_hz;
     uint32_t wrap = (uint32_t)((uint64_t)clock_hz / denominator);
     if (wrap < 2 || wrap > 65536) return -1;
+    uint32_t actual_frequency = (uint32_t)((uint64_t)clock_hz / ((uint64_t)divider * wrap));
+    uint channel = pwm_gpio_to_channel(pin);
+    uint8_t channel_mask = (uint8_t)(1u << channel);
+    picokit_pwm_prepare();
+    critical_section_enter_blocking(&picokit_pwm_critical_section);
+    uint8_t claims = picokit_pwm_slice_channel_claims[slice];
+    if ((claims && picokit_pwm_slice_frequency[slice] != actual_frequency) || (claims & channel_mask)) {
+        critical_section_exit(&picokit_pwm_critical_section);
+        return -2;
+    }
     // Do not change the pin mux until every frequency and output argument has
     // passed validation. A rejected configuration must leave the GPIO usable
     // by the caller's previous peripheral or mode.
     gpio_set_function(pin, GPIO_FUNC_PWM);
-    pwm_set_clkdiv_int_frac(slice, (uint8_t)divider, 0);
-    pwm_set_wrap(slice, (uint16_t)(wrap - 1));
+    if (!claims) {
+        pwm_set_clkdiv_int_frac(slice, (uint8_t)divider, 0);
+        pwm_set_wrap(slice, (uint16_t)(wrap - 1));
+        picokit_pwm_slice_frequency[slice] = actual_frequency;
+    }
     pwm_set_gpio_level(pin, 0);
     pwm_set_enabled(slice, true);
+    picokit_pwm_slice_channel_claims[slice] = claims | channel_mask;
+    critical_section_exit(&picokit_pwm_critical_section);
     *slice_out = slice;
-    *channel_out = pwm_gpio_to_channel(pin);
+    *channel_out = channel;
     *wrap_out = wrap - 1;
     if (actual_frequency_out) {
-        *actual_frequency_out = (uint32_t)((uint64_t)clock_hz / ((uint64_t)divider * wrap));
+        *actual_frequency_out = actual_frequency;
     }
     return 0;
+}
+void picokit_pwm_release(uint32_t pin) {
+    if (!picokit_valid_gpio(pin)) return;
+    picokit_pwm_prepare();
+    uint slice = pwm_gpio_to_slice_num(pin);
+    uint8_t channel_mask = (uint8_t)(1u << pwm_gpio_to_channel(pin));
+    critical_section_enter_blocking(&picokit_pwm_critical_section);
+    uint8_t claims = picokit_pwm_slice_channel_claims[slice];
+    if (claims & channel_mask) {
+        claims &= (uint8_t)~channel_mask;
+        picokit_pwm_slice_channel_claims[slice] = claims;
+        if (!claims) {
+            picokit_pwm_slice_frequency[slice] = 0;
+            pwm_set_enabled(slice, false);
+        }
+    }
+    critical_section_exit(&picokit_pwm_critical_section);
 }
 int32_t picokit_pwm_init(uint32_t pin, uint32_t frequency_hz, uint32_t *slice_out, uint32_t *channel_out, uint32_t *wrap_out) {
     return picokit_pwm_init_impl(pin, frequency_hz, slice_out, channel_out, wrap_out, NULL);
@@ -568,10 +686,20 @@ int32_t picokit_i2c_write(uint32_t instance, uint32_t address, const uint8_t *by
     i2c_inst_t *i2c = picokit_i2c(instance);
     if (!i2c || !picokit_valid_result_count(count) || address < 0x08 || address > 0x77 || (!bytes && count) ||
         timeout_us > UINT32_MAX || nostop > 1) return -1;
-    // The Pico SDK asserts for a zero-length transaction. Keep the C ABI
-    // safe for direct callers as well as the Swift wrapper.
-    if (count == 0) return 0;
-    return i2c_write_timeout_us(i2c, (uint8_t)address, bytes, count, nostop != 0, (uint32_t)timeout_us);
+    // The Pico SDK asserts for a zero-length transaction. A no-STOP empty
+    // transaction is not composable, so reject it; an empty STOP operation is
+    // a safe recovery boundary that clears any pending repeated START.
+    if (count == 0) {
+        i2c->restart_on_next = false;
+        return nostop ? -1 : 0;
+    }
+    int32_t result = i2c_write_timeout_us(
+        i2c, (uint8_t)address, bytes, count, nostop != 0, (uint32_t)timeout_us);
+    // The SDK records restart_on_next from `nostop` even when it aborts a
+    // timed or partial transfer. The abort emits a STOP, so that retained
+    // restart would corrupt the framing of the next independent operation.
+    if (result != (int32_t)count) i2c->restart_on_next = false;
+    return result;
 }
 int32_t picokit_i2c_read(uint32_t instance, uint32_t address, uint8_t *bytes, uint32_t count,
                          uint64_t timeout_us, uint32_t nostop) {
@@ -580,11 +708,34 @@ int32_t picokit_i2c_read(uint32_t instance, uint32_t address, uint8_t *bytes, ui
         timeout_us > UINT32_MAX || nostop > 1) return -1;
     // See picokit_i2c_write: do not enter the SDK assertion path for empty
     // reads, even when the bridge is called without Swift's validation.
-    if (count == 0) return 0;
-    return i2c_read_timeout_us(i2c, (uint8_t)address, bytes, count, nostop != 0, (uint32_t)timeout_us);
+    if (count == 0) {
+        i2c->restart_on_next = false;
+        return nostop ? -1 : 0;
+    }
+    int32_t result = i2c_read_timeout_us(
+        i2c, (uint8_t)address, bytes, count, nostop != 0, (uint32_t)timeout_us);
+    // See the write path: failed no-STOP transfers have already emitted a
+    // STOP, so do not leak their requested repeated START into the next call.
+    if (result != (int32_t)count) i2c->restart_on_next = false;
+    return result;
+}
+void picokit_i2c_recover(uint32_t instance) {
+    i2c_inst_t *i2c = picokit_i2c(instance);
+    if (i2c) i2c->restart_on_next = false;
 }
 
 static spi_inst_t *picokit_spi(uint32_t instance) { return instance == 0 ? spi0 : instance == 1 ? spi1 : NULL; }
+// A bounded transfer can expire after a frame has entered the controller. Do
+// not allow that frame's delayed RX data or overrun state to cross into the
+// next API call. Disabling SSE aborts the unfinished frame; callers must
+// reassert chip-select/protocol framing before retrying at a higher layer.
+static void picokit_spi_recover_after_timeout(spi_inst_t *spi) {
+    uint32_t enable_mask = spi_get_hw(spi)->cr1 & SPI_SSPCR1_SSE_BITS;
+    spi_get_hw(spi)->cr1 &= ~SPI_SSPCR1_SSE_BITS;
+    while (spi_is_readable(spi)) (void)spi_get_hw(spi)->dr;
+    spi_get_hw(spi)->icr = SPI_SSPICR_RORIC_BITS;
+    spi_get_hw(spi)->cr1 |= enable_mask;
+}
 int32_t picokit_spi_init(uint32_t instance, uint32_t frequency_hz, uint32_t sck, uint32_t mosi, uint32_t miso) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi || !picokit_valid_spi_frequency(frequency_hz) ||
@@ -603,12 +754,14 @@ int32_t picokit_spi_init_config(uint32_t instance, uint32_t frequency_hz, uint32
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi || !picokit_valid_spi_frequency(frequency_hz) ||
         !picokit_valid_gpio(sck) || !picokit_valid_gpio(mosi) ||
-        miso < -1 || (miso >= 0 && !picokit_valid_gpio((uint32_t)miso)) || mode > 3 || bit_order > 1 ||
+        miso < -1 || (miso >= 0 && !picokit_valid_gpio((uint32_t)miso)) || mode > 3 || bit_order != 0 ||
         (data_bits != 8 && data_bits != 16) || !picokit_valid_spi_pins(instance, sck, mosi, miso)) return -1;
     uint32_t actual = spi_init(spi, frequency_hz);
     spi_cpol_t cpol = mode >= 2 ? SPI_CPOL_1 : SPI_CPOL_0;
     spi_cpha_t cpha = (mode & 1u) ? SPI_CPHA_1 : SPI_CPHA_0;
-    spi_set_format(spi, data_bits, cpol, cpha, bit_order == 0 ? SPI_MSB_FIRST : SPI_LSB_FIRST);
+    // RP-series PL022 SPI hardware has no LSB-first mode. Reject it above so
+    // this call never reaches the Pico SDK's assertion for SPI_LSB_FIRST.
+    spi_set_format(spi, data_bits, cpol, cpha, SPI_MSB_FIRST);
     gpio_set_function(sck, GPIO_FUNC_SPI);
     gpio_set_function(mosi, GPIO_FUNC_SPI);
     if (miso >= 0) gpio_set_function((uint32_t)miso, GPIO_FUNC_SPI);
@@ -631,9 +784,15 @@ int32_t picokit_spi_read_timeout(uint32_t instance, uint8_t repeated_tx_data, ui
     if (!spi || !picokit_valid_result_count(count) || (!bytes && count)) return -1;
     uint64_t deadline = picokit_deadline_after(timeout_us);
     for (uint32_t index = 0; index < count; index++) {
-        while (!spi_is_writable(spi)) if (picokit_expired(deadline)) return -2;
+        while (!spi_is_writable(spi)) {
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return -2; }
+            tight_loop_contents();
+        }
         spi_get_hw(spi)->dr = repeated_tx_data;
-        while (!spi_is_readable(spi)) if (picokit_expired(deadline)) return -2;
+        while (!spi_is_readable(spi)) {
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return -2; }
+            tight_loop_contents();
+        }
         bytes[index] = (uint8_t)spi_get_hw(spi)->dr;
     }
     return (int32_t)count;
@@ -669,9 +828,15 @@ int32_t picokit_spi_read16_timeout(uint32_t instance, uint16_t repeated_tx_word,
     if (!spi || !picokit_valid_result_count(count) || (!words && count)) return -1;
     uint64_t deadline = picokit_deadline_after(timeout_us);
     for (uint32_t index = 0; index < count; index++) {
-        while (!spi_is_writable(spi)) if (picokit_expired(deadline)) return -2;
+        while (!spi_is_writable(spi)) {
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return -2; }
+            tight_loop_contents();
+        }
         spi_get_hw(spi)->dr = repeated_tx_word;
-        while (!spi_is_readable(spi)) if (picokit_expired(deadline)) return -2;
+        while (!spi_is_readable(spi)) {
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return -2; }
+            tight_loop_contents();
+        }
         words[index] = (uint16_t)spi_get_hw(spi)->dr;
     }
     return (int32_t)count;
@@ -683,12 +848,14 @@ int32_t picokit_spi_write_timeout(uint32_t instance, const uint8_t *bytes, uint3
     uint32_t transferred = 0;
     while (transferred < count) {
         while (!spi_is_writable(spi)) {
-            if (picokit_expired(deadline)) return (int32_t)transferred;
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return (int32_t)transferred; }
+            tight_loop_contents();
         }
         spi_get_hw(spi)->dr = bytes[transferred++];
         // Drain RX to avoid stalling a full-duplex peripheral during TX-only use.
         while (!spi_is_readable(spi)) {
-            if (picokit_expired(deadline)) return (int32_t)(transferred - 1);
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return (int32_t)(transferred - 1); }
+            tight_loop_contents();
         }
         (void)spi_get_hw(spi)->dr;
     }
@@ -700,9 +867,15 @@ int32_t picokit_spi_transfer16(uint32_t instance, const uint16_t *tx, uint16_t *
     if (!spi || !picokit_valid_result_count(count) || (!tx && count) || (!rx && count)) return -1;
     uint64_t deadline = picokit_deadline_after(timeout_us);
     for (uint32_t index = 0; index < count; index++) {
-        while (!spi_is_writable(spi)) if (picokit_expired(deadline)) return -2;
+        while (!spi_is_writable(spi)) {
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return -2; }
+            tight_loop_contents();
+        }
         spi_get_hw(spi)->dr = tx[index];
-        while (!spi_is_readable(spi)) if (picokit_expired(deadline)) return -2;
+        while (!spi_is_readable(spi)) {
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return -2; }
+            tight_loop_contents();
+        }
         rx[index] = (uint16_t)spi_get_hw(spi)->dr;
     }
     return (int32_t)count;
@@ -720,18 +893,20 @@ int32_t picokit_spi_write16_timeout(uint32_t instance, const uint16_t *words, ui
     uint32_t transferred = 0;
     while (transferred < count) {
         while (!spi_is_writable(spi)) {
-            if (picokit_expired(deadline)) return (int32_t)transferred;
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return (int32_t)transferred; }
+            tight_loop_contents();
         }
         spi_get_hw(spi)->dr = words[transferred++];
         // Drain RX to keep the full-duplex SPI peripheral moving during TX-only use.
         while (!spi_is_readable(spi)) {
-            if (picokit_expired(deadline)) return (int32_t)(transferred - 1);
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return (int32_t)(transferred - 1); }
+            tight_loop_contents();
         }
         (void)spi_get_hw(spi)->dr;
     }
     return (int32_t)transferred;
 }
-static int32_t picokit_spi_dma_write(
+static int32_t picokit_spi_dma_write_impl(
     uint32_t instance,
     spi_inst_t *spi,
     const void *bytes,
@@ -795,6 +970,7 @@ static int32_t picokit_spi_dma_write(
             picokit_dma_channel_has_error((uint)rx_channel)) {
             dma_channel_cleanup((uint)tx_channel);
             dma_channel_cleanup((uint)rx_channel);
+            picokit_spi_recover_after_timeout(spi);
             return -4;
         }
         if (!dma_channel_is_busy((uint)tx_channel) &&
@@ -805,94 +981,132 @@ static int32_t picokit_spi_dma_write(
             // channel from restarting after timeout recovery.
             dma_channel_cleanup((uint)tx_channel);
             dma_channel_cleanup((uint)rx_channel);
+            picokit_spi_recover_after_timeout(spi);
             return -2;
         }
+        tight_loop_contents();
     }
     return (int32_t)count;
 }
-int32_t picokit_spi_write_dma(uint32_t instance, const uint8_t *bytes, uint32_t count) {
+static int32_t picokit_spi_dma_write(
+    uint32_t instance,
+    uint32_t owner,
+    spi_inst_t *spi,
+    const void *bytes,
+    volatile void *received,
+    bool receive_write_increment,
+    uint32_t count,
+    enum dma_channel_transfer_size size,
+    bool timed,
+    uint64_t timeout_us
+) {
+    picokit_dma_prepare();
+    critical_section_enter_blocking(&picokit_spi_dma_critical_sections[instance]);
+    int32_t result = -3;
+    if (owner != 0u &&
+        (picokit_spi_dma_owners[instance] == 0u || picokit_spi_dma_owners[instance] == owner)) {
+        picokit_spi_dma_owners[instance] = owner;
+        result = picokit_spi_dma_write_impl(
+            instance, spi, bytes, received, receive_write_increment, count, size, timed, timeout_us);
+    }
+    critical_section_exit(&picokit_spi_dma_critical_sections[instance]);
+    return result;
+}
+int32_t picokit_spi_write_dma(uint32_t instance, uint32_t owner, const uint8_t *bytes, uint32_t count) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
     uint8_t discard;
-    return picokit_spi_dma_write(instance, spi, bytes, &discard, false, count, DMA_SIZE_8, false, 0);
+    return picokit_spi_dma_write(instance, owner, spi, bytes, &discard, false, count, DMA_SIZE_8, false, 0);
 }
 int32_t picokit_spi_write_dma_timeout(
-    uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us
+    uint32_t instance, uint32_t owner, const uint8_t *bytes, uint32_t count, uint64_t timeout_us
 ) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
     uint8_t discard;
     return picokit_spi_dma_write(
-        instance, spi, bytes, &discard, false, count, DMA_SIZE_8, true, timeout_us
+        instance, owner, spi, bytes, &discard, false, count, DMA_SIZE_8, true, timeout_us
     );
 }
-int32_t picokit_spi_write16_dma(uint32_t instance, const uint16_t *words, uint32_t count) {
+int32_t picokit_spi_write16_dma(uint32_t instance, uint32_t owner, const uint16_t *words, uint32_t count) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
     uint16_t discard;
-    return picokit_spi_dma_write(instance, spi, words, &discard, false, count, DMA_SIZE_16, false, 0);
+    return picokit_spi_dma_write(instance, owner, spi, words, &discard, false, count, DMA_SIZE_16, false, 0);
 }
 int32_t picokit_spi_write16_dma_timeout(
-    uint32_t instance, const uint16_t *words, uint32_t count, uint64_t timeout_us
+    uint32_t instance, uint32_t owner, const uint16_t *words, uint32_t count, uint64_t timeout_us
 ) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
     uint16_t discard;
     return picokit_spi_dma_write(
-        instance, spi, words, &discard, false, count, DMA_SIZE_16, true, timeout_us
+        instance, owner, spi, words, &discard, false, count, DMA_SIZE_16, true, timeout_us
     );
 }
-int32_t picokit_spi_transfer_dma(uint32_t instance, const uint8_t *tx, uint8_t *rx, uint32_t count) {
+int32_t picokit_spi_transfer_dma(uint32_t instance, uint32_t owner, const uint8_t *tx, uint8_t *rx, uint32_t count) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
-    return picokit_spi_dma_write(instance, spi, tx, rx, true, count, DMA_SIZE_8, false, 0);
+    return picokit_spi_dma_write(instance, owner, spi, tx, rx, true, count, DMA_SIZE_8, false, 0);
 }
 int32_t picokit_spi_transfer_dma_timeout(
-    uint32_t instance, const uint8_t *tx, uint8_t *rx, uint32_t count, uint64_t timeout_us
+    uint32_t instance, uint32_t owner, const uint8_t *tx, uint8_t *rx, uint32_t count, uint64_t timeout_us
 ) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
     return picokit_spi_dma_write(
-        instance, spi, tx, rx, true, count, DMA_SIZE_8, true, timeout_us
+        instance, owner, spi, tx, rx, true, count, DMA_SIZE_8, true, timeout_us
     );
 }
-int32_t picokit_spi_transfer16_dma(uint32_t instance, const uint16_t *tx, uint16_t *rx, uint32_t count) {
+int32_t picokit_spi_transfer16_dma(uint32_t instance, uint32_t owner, const uint16_t *tx, uint16_t *rx, uint32_t count) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
-    return picokit_spi_dma_write(instance, spi, tx, rx, true, count, DMA_SIZE_16, false, 0);
+    return picokit_spi_dma_write(instance, owner, spi, tx, rx, true, count, DMA_SIZE_16, false, 0);
 }
 int32_t picokit_spi_transfer16_dma_timeout(
-    uint32_t instance, const uint16_t *tx, uint16_t *rx, uint32_t count, uint64_t timeout_us
+    uint32_t instance, uint32_t owner, const uint16_t *tx, uint16_t *rx, uint32_t count, uint64_t timeout_us
 ) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi) return -1;
     return picokit_spi_dma_write(
-        instance, spi, tx, rx, true, count, DMA_SIZE_16, true, timeout_us
+        instance, owner, spi, tx, rx, true, count, DMA_SIZE_16, true, timeout_us
     );
 }
-void picokit_spi_dma_release(uint32_t instance) {
-    if (instance > 1) return;
-    int tx_channel = picokit_spi_dma_tx_channels[instance];
-    int rx_channel = picokit_spi_dma_rx_channels[instance];
-    if (tx_channel >= 0) {
-        dma_channel_cleanup((uint)tx_channel);
-        dma_channel_unclaim((uint)tx_channel);
-        picokit_spi_dma_tx_channels[instance] = -1;
+void picokit_spi_dma_release(uint32_t instance, uint32_t owner) {
+    if (instance > 1 || owner == 0u) return;
+    picokit_dma_prepare();
+    critical_section_enter_blocking(&picokit_spi_dma_critical_sections[instance]);
+    if (picokit_spi_dma_owners[instance] == owner) {
+        int tx_channel = picokit_spi_dma_tx_channels[instance];
+        int rx_channel = picokit_spi_dma_rx_channels[instance];
+        if (tx_channel >= 0) {
+            dma_channel_cleanup((uint)tx_channel);
+            dma_channel_unclaim((uint)tx_channel);
+            picokit_spi_dma_tx_channels[instance] = -1;
+        }
+        if (rx_channel >= 0) {
+            dma_channel_cleanup((uint)rx_channel);
+            dma_channel_unclaim((uint)rx_channel);
+            picokit_spi_dma_rx_channels[instance] = -1;
+        }
+        picokit_spi_dma_owners[instance] = 0u;
     }
-    if (rx_channel >= 0) {
-        dma_channel_cleanup((uint)rx_channel);
-        dma_channel_unclaim((uint)rx_channel);
-        picokit_spi_dma_rx_channels[instance] = -1;
-    }
+    critical_section_exit(&picokit_spi_dma_critical_sections[instance]);
 }
 int32_t picokit_spi_transfer(uint32_t instance, const uint8_t *tx, uint8_t *rx, uint32_t count, uint64_t timeout_us) {
     spi_inst_t *spi = picokit_spi(instance);
     if (!spi || !picokit_valid_result_count(count) || (!tx && count) || (!rx && count)) return -1;
     uint64_t deadline = picokit_deadline_after(timeout_us);
     for (uint32_t index = 0; index < count; index++) {
-        while (!spi_is_writable(spi)) if (picokit_expired(deadline)) return -2;
+        while (!spi_is_writable(spi)) {
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return -2; }
+            tight_loop_contents();
+        }
         spi_get_hw(spi)->dr = tx[index];
-        while (!spi_is_readable(spi)) if (picokit_expired(deadline)) return -2;
+        while (!spi_is_readable(spi)) {
+            if (picokit_expired(deadline)) { picokit_spi_recover_after_timeout(spi); return -2; }
+            tight_loop_contents();
+        }
         rx[index] = (uint8_t)spi_get_hw(spi)->dr;
     }
     return (int32_t)count;
@@ -908,8 +1122,14 @@ int32_t picokit_interrupt_enable(uint32_t pin, uint32_t edge) {
 
 void picokit_interrupt_disable(uint32_t pin) {
     if (pin >= PICOKIT_GPIO_COUNT) return;
+    // Serialize the mask/acknowledge/clear boundary with the callback on this
+    // core. Without this critical window, an IRQ already selected for delivery
+    // can OR its event into the word after the foreground clear.
+    uint32_t interrupt_state = save_and_disable_interrupts();
     gpio_set_irq_enabled(pin, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false);
-    __atomic_store_n(&picokit_interrupt_events[pin], 0u, __ATOMIC_RELAXED);
+    gpio_acknowledge_irq(pin, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL);
+    __atomic_store_n(&picokit_interrupt_events[pin], 0u, __ATOMIC_RELEASE);
+    restore_interrupts(interrupt_state);
 }
 
 uint32_t picokit_interrupt_take(uint32_t pin) {

@@ -63,7 +63,11 @@ Every read and write takes a positive `Duration`. The C bridge accepts a
 throw `timedOut`, `partialTransfer`, or `ioFailure`; use those outcomes to
 choose a bounded retry or a safe device state.
 
-An empty write and a zero-length read are validated no-ops. Address and timeout
+An empty STOP-scoped write or direct read is a validated no-op and clears any
+pending repeated-START state. An empty no-STOP operation is rejected because it
+cannot represent a useful next phase. A composed `writeRead` must request at
+least one byte: PicoKit rejects an empty response before issuing its prefix
+write so it cannot leave a repeated START pending. Address and timeout
 validation still occurs first, so an invalid transaction is not made valid by
 passing an empty buffer.
 
@@ -101,7 +105,9 @@ let sample = try i2c.writeRead(
 `writeRead` validates the complete address, prefix, count, and timeout before
 issuing the prefix write. Its timeout applies independently to the write and
 read portions. This prevents an invalid read count from causing a side-effect
-write before the error is reported.
+or a failed no-STOP phase from leaking a repeated START into the next
+independent transaction; no prefix write occurs before an invalid composed
+operation is reported.
 
 Use `stop: false` on a read only when another operation must follow without
 releasing the bus. If the transaction is complete, leave the default STOP in
@@ -241,6 +247,10 @@ The timeout covers the complete operation. Timed SPI writes can report a
 `partialTransfer` with the number of frames accepted before the deadline.
 Timed receive and full-duplex paths report `timedOut` or an SDK `ioFailure`
 according to the bridge result. Untimed operations use the SDK blocking path;
+on every timed SPI failure, PicoKit aborts the controller frame and clears its
+RX FIFO and overrun state. That prevents stale data from reaching the next API
+call, but it does not make the device protocol retry-safe: deassert/reassert
+chip select and resynchronize the device command sequence before retrying.
 do not place one in a watchdog-protected loop unless an unbounded stall is an
 intentional reset policy.
 
