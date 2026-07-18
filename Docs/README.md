@@ -59,6 +59,8 @@ the decisions and failure modes that a declaration alone cannot express.
    chip-select lifetime, transfer formats, timeouts, and physical proof.
 13. [Hardware validation](hardware-validation.md) — host, firmware, fake-flash,
    USB-echo, and physical-peripheral evidence with safety boundaries.
+14. [Typed API and errors](typed-api-and-errors.md) — board identity, validated
+   pins, explicit units, failure categories, and API-level choice.
 
 ## Reference
 

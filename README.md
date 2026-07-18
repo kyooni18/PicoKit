@@ -99,6 +99,7 @@ The maintained documentation is organized by workflow and peripheral:
 - [Firmware build and bridge](Docs/firmware-build-and-bridge.md)
 - [I2C and SPI transactions](Docs/i2c-and-spi-transactions.md)
 - [Hardware validation](Docs/hardware-validation.md)
+- [Typed API and errors](Docs/typed-api-and-errors.md)
 - [Hardware guide](Docs/hardware-guide.md)
 - [USB serial and UART](Docs/serial-and-uart.md)
 - [PWM, ADC, I2C, and SPI](Docs/buses-and-analog.md)
