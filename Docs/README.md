@@ -51,6 +51,8 @@ the decisions and failure modes that a declaration alone cannot express.
    settings, glitch-free startup, active-level pulses, and physical verification.
 9. [Interrupts and watchdog](interrupts-and-watchdog.md) — coalesced edge
    delivery, foreground debounce, healthy-loop feeding, and board limits.
+10. [ADC and PWM](analog-and-pwm.md) — raw sampling, frequency quantization,
+   counter units, duty scaling, and backlight polarity.
 
 ## Reference
 

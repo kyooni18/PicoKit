@@ -95,6 +95,7 @@ The maintained documentation is organized by workflow and peripheral:
 - [DMA and buffer lifecycle](Docs/dma-and-buffer-lifecycle.md)
 - [GPIO and reset sequencing](Docs/gpio-and-reset-sequencing.md)
 - [Interrupts and watchdog](Docs/interrupts-and-watchdog.md)
+- [ADC and PWM](Docs/analog-and-pwm.md)
 - [Hardware guide](Docs/hardware-guide.md)
 - [USB serial and UART](Docs/serial-and-uart.md)
 - [PWM, ADC, I2C, and SPI](Docs/buses-and-analog.md)
