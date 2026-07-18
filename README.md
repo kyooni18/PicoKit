@@ -101,6 +101,7 @@ The maintained documentation is organized by workflow and peripheral:
 - [Hardware validation](Docs/hardware-validation.md)
 - [Typed API and errors](Docs/typed-api-and-errors.md)
 - [Driver testing](Docs/driver-testing.md)
+- [Peripheral pin validation](Docs/peripheral-pin-validation.md)
 - [Hardware guide](Docs/hardware-guide.md)
 - [USB serial and UART](Docs/serial-and-uart.md)
 - [PWM, ADC, I2C, and SPI](Docs/buses-and-analog.md)
