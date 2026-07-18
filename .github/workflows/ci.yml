@@ -26,6 +26,8 @@ jobs:
         run: swift build
       - name: Run host validation
         run: swift run PicoKitHostTests
+      - name: Verify GPIO facade host behavior
+        run: sh Tests/gpio-facade-host.sh
       - name: Release build and host validation
         run: |
           swift build -c release

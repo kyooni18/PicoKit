@@ -14,6 +14,7 @@ documentation without a Pico SDK, cross compiler, or connected board:
 ```sh
 swift build
 swift run PicoKitHostTests
+sh Tests/gpio-facade-host.sh
 swift build -c release
 swift run -c release PicoKitHostTests
 sh Tests/api-reference.sh
