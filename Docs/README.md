@@ -71,6 +71,9 @@ the decisions and failure modes that a declaration alone cannot express.
    bounded retries, reset sequencing, safe outputs, and bus resynchronization.
 19. [Release readiness](release-readiness.md) — reproducible inputs, board
    matrix gates, artifact identity, and evidence-accurate release claims.
+20. [Observability and diagnostics](observability-and-diagnostics.md) —
+   connection-independent reporting, byte protocols, bounded logging, and
+   evidence capture.
 
 ## Reference
 
