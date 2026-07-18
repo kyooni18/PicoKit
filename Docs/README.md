@@ -55,6 +55,8 @@ the decisions and failure modes that a declaration alone cannot express.
    counter units, duty scaling, and backlight polarity.
 11. [Firmware build and bridge](firmware-build-and-bridge.md) — host versus
    firmware builds, CMake inputs, SDK/compiler selection, USB options, and evidence.
+12. [I2C and SPI transactions](i2c-and-spi-transactions.md) — bus framing,
+   chip-select lifetime, transfer formats, timeouts, and physical proof.
 
 ## Reference
 
