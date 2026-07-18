@@ -103,6 +103,17 @@ meaningful test needs selected wiring, clock/baud, buffer size, and a verified
 receiver. Record both elapsed time and byte integrity. A shorter duration is
 not an improvement if frames are lost or the receiver cannot keep up.
 
+## Measurement record
+
+Archive the firmware revision, PicoKit revision, SDK commit, board/chip,
+`CMAKE_BUILD_TYPE`, clock configuration, CMake options, monitor command,
+iteration count, wiring, and raw CSV together. Report median and spread across
+repeated runs, not one favorable sample. If a change affects correctness,
+include the byte-integrity or logic-analyzer result beside the timing result.
+
+The fixture is useful because it gives a repeatable starting point; it is not a
+benchmark certification for a different clock, board, driver, or bus topology.
+
 ## Reading surprising results
 
 Compare the generated code path and amount of work before attributing a result

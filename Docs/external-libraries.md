@@ -108,6 +108,19 @@ Use `AppInterop.h` when vendor configuration headers require strict include
 ordering or a standalone Clang module is impractical. Keep the umbrella narrow:
 it should expose project adapters, not every private vendor header.
 
+## Dependency review checklist
+
+Before merging a dependency change, inspect the URL or local path, exact
+revision, archive checksum, selected integration mode, include directories,
+configuration headers, compile definitions, and board conditions. Then review
+both `dependencies.lock` and `Generated/Dependencies.cmake`. A dependency that
+builds on one host but is not represented in those files is not reproducible.
+
+Keep the application ABI smaller than the vendor API. A C adapter should expose
+fixed-width values, pointer-plus-length buffers, opaque handles, and explicit
+status codes. A C++ adapter should own construction/destruction and catch
+exceptions before crossing into Swift.
+
 ## Migrating legacy projects
 
 Legacy `Firmware/Dependencies.cmake` remains supported. Migrate deliberately:

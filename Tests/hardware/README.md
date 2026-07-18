@@ -48,3 +48,13 @@ fails the test.
 Set `PICO_HARDWARE_REQUIRE_CDC=1` when CDC enumeration is mandatory; this turns
 the no-CDC-after-flash diagnostic into a failure. The image is also checked for
 the PicoKit startup hook and TinyUSB/stdio symbols before any physical flash.
+
+## Recording a result
+
+For each physical run record the board name, chip family, PicoKit/SDK revision,
+USB device path, whether the board began in BOOTSEL or application mode, flash
+result, CDC re-enumeration result, exact bytes sent and received, and any
+external wiring. A passing script without that context is difficult to compare
+with another board or release. Never enable the hardware section in unattended
+CI unless the connected board and destructive flash scope are explicitly owned
+by that job.

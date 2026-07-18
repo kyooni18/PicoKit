@@ -1,5 +1,14 @@
 # PicoKit hardware guide
 
+## Hardware contract before wiring
+
+Before connecting a peripheral, record the compiled board, selected chip, pin
+function, voltage level, pull state, bus frequency, and timeout. Constructors
+validate digital pin maps and the bridge validates chip-specific mux rules; no
+software check can detect a swapped wire, missing common ground, incorrect
+voltage, or an address conflict. Treat `PicoKitError` as a software diagnostic,
+not as an electrical test.
+
 ## Core types and errors
 
 

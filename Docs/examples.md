@@ -440,6 +440,19 @@ not emulate the Pico SDK; direct peripheral calls correctly report
 `PicoKitError.unavailable`. Use firmware builds and physical tests for pin mux,
 timing, USB enumeration, voltage levels, and wiring.
 
+## Example reading key
+
+Each program deliberately states its board assumptions and its proof boundary.
+`BoardLED` and USB examples need a firmware build; the fake GPIO example is
+host-testable. Examples that use I2C or SPI show a transaction shape, not a
+universal sensor protocol: replace the address, register bytes, frame format,
+and voltage assumptions with the device's datasheet before wiring a board.
+
+When adapting an example, keep setup outside the loop, keep one owner per
+peripheral, and decide whether a failed operation should throw, be ignored with
+`try?`, or be a deliberate fail-fast condition. That choice is part of the
+firmware behavior and should not be hidden by copying `try!` indiscriminately.
+
 ## Where to go next
 
 - Use [USB serial and UART](serial-and-uart.md) for connection settings, UART

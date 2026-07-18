@@ -141,6 +141,21 @@ hardware, the same fixture records whether a write before DTR produced the
 documented disconnected error, reports a connected write, and then provides a
 raw byte echo for NUL-inclusive acceptance testing.
 
+## Evidence levels
+
+Keep these claims separate in bug reports and release notes:
+
+| Evidence | Proves | Does not prove |
+| --- | --- | --- |
+| Host build/tests | validation, error mapping, fake behavior | SDK linkage or wiring |
+| Firmware integration build | compiler, bridge, board-specific symbols | a connected peripheral |
+| USB serial echo | image boots and CDC transfers bytes | external bus correctness |
+| Logic analyzer or scope | electrical edges and timing | application-level decoding |
+| Device-specific fixture | protocol behavior for that wiring | every board or configuration |
+
+This vocabulary prevents a green build from being reported as hardware
+validation and makes the next diagnostic step obvious.
+
 ## Deliberate limits
 
 PicoKit does not provide an async scheduler, PIO API, wireless stack, USB

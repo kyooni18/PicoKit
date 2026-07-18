@@ -130,6 +130,23 @@ SCK, MOSI, MISO, and explicit chip select must not conflict. Full-duplex
 `read(count:repeatedByte:)`; 16-bit mode uses `read(_:repeatedWord:)` and the
 `[UInt16]` transfer/write overloads.
 
+## Transaction review checklist
+
+Before calling a bus driver complete these checks:
+
+- GPIO alternate-function pins match the selected `I2CInstance`, `SPIInstance`,
+  or UART instance.
+- The target address, frame width, bit order, mode, and stop/repeated-START
+  policy match the device datasheet.
+- Timeouts are bounded for a disconnected device and long enough for the
+  selected clock and transaction length.
+- SPI chip select is configured with an active-high idle state and is not shared
+  accidentally with SCK, MOSI, or MISO.
+- DMA channels are released when the peripheral's owner changes.
+
+The API can reject invalid software configurations and partial transfers. It
+cannot prove that a slave responded with semantically valid data.
+
 ## SPI DMA
 
 DMA calls remain synchronous but reduce CPU work for prepared buffers:

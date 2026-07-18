@@ -128,6 +128,19 @@ UART0 supports TX/RX pairs `0/1, 2/3, 12/13, 14/15, 16/17, 18/19, 28/29`.
 UART1 supports `4/5, 6/7, 8/9, 10/11, 20/21, 22/23, 24/25, 26/27` on RP2350.
 TX and RX must be different pins and valid for the selected controller/chip.
 
+## Choosing USB or UART
+
+Use USB CDC for bring-up, logs, byte-level tests, and the SwiftPico monitor.
+Use `PicoUART` when the product needs a physical TX/RX connection to another
+device. USB connection state depends on host enumeration and, by default, DTR;
+UART connection state is an electrical and protocol concern owned by the
+application. Do not use a USB monitor result as proof that a UART pin map or
+external transceiver is correct.
+
+For either path, define framing before writing a driver: byte order, maximum
+packet size, timeout policy, retry behavior, and what a partial transfer means.
+PicoKit supplies bytes and status; it does not invent a line protocol.
+
 ## UART DMA and ownership
 
 For a sufficiently large prepared output buffer, `writeDMA` reduces per-byte

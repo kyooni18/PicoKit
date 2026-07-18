@@ -153,6 +153,20 @@ inspect the lockfile and generated CMake, then build before committing. A normal
 `swiftpico build` reuses the lockfile; it does not silently upgrade a library.
 That separation keeps a firmware build reviewable and reproducible.
 
+## Upgrade decision table
+
+| Situation | Keep | Change |
+| --- | --- | --- |
+| Existing app uses `pinMode` and `Serial` | sketch facade and source layout | only dependency metadata if needed |
+| App needs recoverable peripheral failures | throwing HAL objects | error handling at the application boundary |
+| Vendor library is C | project adapter/module | PicoKit's private bridge |
+| Vendor library is C++ | `extern "C"` adapter and explicit ownership | direct C++ types in Swift |
+| Build is reproducible locally but not in CI | lock and generated CMake review | unpinned intent or local-only paths |
+| Timing claim matters | release fixture plus logic analyzer | conclusions based only on host timing |
+
+The integration boundary is successful when the application can be rebuilt from
+the committed manifest and lock files without modifying PicoKit internals.
+
 ## Performance measurement
 
 Measure before choosing a fast path. GPIO masks update several configured pins

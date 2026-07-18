@@ -1,8 +1,22 @@
 # PicoKit documentation
 
-Start with the project workflow, then open the guide for the peripheral or
-integration boundary you are using. The repository [README](../README.md) is
-the short introduction; these documents contain the working detail.
+PicoKit is a small embedded Swift hardware layer. The fastest way to learn it
+is to make one firmware image run, then choose the narrow guide that matches
+the hardware you are adding. The repository [README](../README.md) explains the
+boundary between PicoKit and the SwiftPico host CLI; this directory explains
+the firmware API and the evidence needed to trust it.
+
+## How to read this documentation
+
+Every guide answers four questions:
+
+1. What problem does this layer solve?
+2. What is the smallest valid Swift program?
+3. What does the API validate or refuse before touching hardware?
+4. Which host, integration, or physical test proves the behavior?
+
+The [API reference](api-reference.md) is the declaration index. The guides add
+the decisions and failure modes that a declaration alone cannot express.
 
 ## Start here
 
@@ -29,5 +43,25 @@ the short introduction; these documents contain the working detail.
 ## Reference
 
 9. [API reference](api-reference.md) — complete public declaration surface.
-10. [Integration notes](integration.md) — concise interoperability and
-   performance summary for readers upgrading an existing project.
+10. [Integration notes](integration.md) — upgrade-oriented map of the C/C++
+   boundary, lockfiles, migration, DMA, and measurement.
+
+## Source-of-truth rule
+
+The Swift declarations under `Sources/PicoKitCore` and `Sources/PicoKitHAL`
+define the public API. `Firmware/PicoKitSDKBridge.c` defines the hardware
+boundary and status conversion. If a guide and the source disagree, the source
+and the executable validation scripts win; update the guide and its validation
+string in the same change.
+
+The documentation gates are intentionally visible:
+
+```sh
+sh Tests/docs-links.sh
+sh Tests/docs-consistency.sh
+sh Tests/api-reference.sh
+```
+
+For a new public declaration, update the API reference first, then add an
+explained example or a focused guide section when the behavior needs wiring,
+timing, ownership, or recovery context.

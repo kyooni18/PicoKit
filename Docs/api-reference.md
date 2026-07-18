@@ -6,9 +6,25 @@ Import one module:
 import PicoKit
 ```
 
-This reference covers every public PicoKit declaration. APIs that touch
-hardware throw `PicoKitError.unavailable("Pico SDK bridge")` in a normal host
-SwiftPM build unless noted otherwise.
+This reference covers every public PicoKit declaration. Read it as a lookup
+table, not as a wiring tutorial: use the focused guides and [examples](examples.md)
+for complete programs. APIs that touch hardware throw
+`PicoKitError.unavailable("Pico SDK bridge")` in a normal host SwiftPM build
+unless noted otherwise.
+
+## Contract shared by the API
+
+- GPIO values are validated before the SDK bridge is called.
+- `Duration` and `Frequency` reject zero and overflowing conversions.
+- Peripheral constructors validate instance/pin combinations and report the
+  actual quantized frequency or baud rate when the SDK provides it.
+- Throwing APIs report timeout, partial-transfer, I/O, ownership, and
+  unavailable states as `PicoKitError`; sketch helpers intentionally fail fast.
+- Peripheral instances are single-owner, foreground objects. They are not a
+  synchronization mechanism for tasks, cores, or interrupt handlers.
+
+The coverage gate derives public symbols from the Swift symbol graph and checks
+this file. Run `sh Tests/api-reference.sh` after public API changes.
 
 ## Core types
 
@@ -70,11 +86,13 @@ final class PicoGPIO: DigitalIO {
     func digitalRead(_ pin: Int) throws -> PinState
     func digitalToggle(_ pin: Int) throws
 }
+```
 
 `PicoGPIO(chip:)` keeps the selected chip as an explicit declaration. Its
 firmware operations reject a declaration that differs from the compiled Pico
 target; use `PicoGPIO.rp2040` or `PicoGPIO.rp2350` to make that choice explicit.
 
+```swift
 final class BoardLED {
     init() throws
     init(board: PicoBoard) throws
@@ -82,10 +100,12 @@ final class BoardLED {
     func set(_ state: PinState) throws
     func toggle() throws
 }
+```
 
 `BoardLED` rejects a board declaration whose RP2040/RP2350 chip does not
 match the firmware target selected by `PICO_BOARD`.
 
+```swift
 enum Clock {
     static func now() -> UInt64
     static func sleep(for duration: Duration) throws
@@ -251,10 +271,12 @@ final class PicoI2C {
     func read(address: UInt8, count: Int, timeout: Duration, stop: Bool = true) throws -> [UInt8]
     func writeRead(address: UInt8, bytes: [UInt8], count: Int, timeout: Duration) throws -> [UInt8]
 }
+```
 
 Both I2C methods issue STOP by default. Pass `stop: false` to retain the bus
 for a repeated START before the next operation.
 
+```swift
 enum SPIInstance: UInt32 { case spi0, spi1 }
 enum SPIMode: UInt32 { case mode0, mode1, mode2, mode3 }
 enum SPIBitOrder: UInt32 { case mostSignificantBitFirst, leastSignificantBitFirst }

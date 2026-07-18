@@ -202,6 +202,23 @@ uses `PicoPin`, `Duration`, `Frequency`, peripheral instances, and
 timeout instead of trapping. The two levels can be mixed: `Serial.println` is
 fine for logging while a `PicoI2C` instance owns a sensor bus.
 
+## A repeatable first-day checklist
+
+Use this order when bringing up a new board or checkout:
+
+1. Run `swiftpico doctor` and fix host-tool errors before touching source.
+2. Generate `serial`, build it, and confirm `Serial echo ready` in
+   `swiftpico monitor --reconnect`.
+3. Flash `blink` and confirm the board-specific LED path.
+4. Add one peripheral at a time, keeping its pin map and expected electrical
+   levels next to the example.
+5. Run host gates, then the board-family integration gate, then the physical
+   matrix when hardware behavior matters.
+
+This sequence separates toolchain, USB, firmware-link, API-validation, and
+wiring failures. A successful host build is evidence for only the first four
+categories; it is not evidence that a pin is connected correctly.
+
 ## Troubleshooting
 
 Start with `swiftpico doctor`; it reports the Embedded Swift toolchain, CMake,

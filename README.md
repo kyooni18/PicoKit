@@ -1,15 +1,22 @@
 # PicoKit
 
-PicoKit lets you write Raspberry Pi Pico firmware in Swift without having to
-live in register definitions or Pico SDK macros. It supports the RP2040 Pico
-family and the RP2350 Pico 2 family, while keeping the official Pico SDK on the
-other side of a small C bridge.
+PicoKit is an Embedded Swift hardware layer for Raspberry Pi Pico and Pico 2
+firmware. It gives application code validated pins, explicit time and
+frequency units, typed errors, USB/UART, GPIO, PWM, ADC, I2C, SPI, interrupts,
+and watchdog control while keeping Pico SDK headers behind a small C bridge.
+The application imports `PicoKit`; it does not need to reproduce the SDK's
+register or CMake vocabulary.
+
+The package is deliberately not an operating system. It does not schedule
+tasks, hide peripheral ownership, or promise asynchronous I/O. A firmware
+program owns its hardware resources and chooses between the convenient
+fail-fast sketch facade and the throwing low-level objects.
 
 Host-side package builds support macOS 13 or newer on both Apple Silicon
 (`arm64`) and Intel (`x86_64`). Firmware output still targets the selected
 Raspberry Pi Pico board.
 
-## Architecture
+## Architecture and boundaries
 
 - `Sources/PicoKitCore`: Foundation-free validation, units, errors, boards,
   and protocols.
@@ -19,8 +26,12 @@ Raspberry Pi Pico board.
 
 In practice, application code imports one module—`PicoKit`. The CMake build
 compiles the Swift layers into that library and links it to the SDK bridge. The
-old direct-register prototype lives in `Legacy/UnsafeMMIO` for reference only;
-it is not part of a normal build.
+bridge is the only layer that includes Pico SDK headers. Application C/C++
+dependencies belong in the generated project's `Firmware/Interop` boundary,
+not in PicoKit's internal bridge.
+
+The old direct-register prototype lives in `Legacy/UnsafeMMIO` for comparison
+only; it is not part of a normal build.
 
 ## SwiftPico CLI
 
@@ -86,6 +97,12 @@ The maintained documentation is organized by workflow and peripheral:
 - [Performance](Docs/performance.md)
 - [API reference](Docs/api-reference.md)
 - [Integration notes](Docs/integration.md)
+
+The docs are organized as a loop: [getting started](Docs/getting-started.md)
+gets a board running, [examples](Docs/examples.md) show complete programs,
+focused guides explain peripherals and runtime contracts, and the [API
+reference](Docs/api-reference.md) provides declaration-level lookup. Run the
+documentation gates before changing a public symbol or moving a guide.
 
 ## Firmware API
 
