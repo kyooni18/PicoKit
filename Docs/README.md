@@ -86,6 +86,8 @@ the decisions and failure modes that a declaration alone cannot express.
    conditional SDK paths, fake seams, architecture coverage, and evidence.
 26. [Protocol framing](protocol-framing.md) — raw bytes, byte order, bus frame
    widths, UART framing, checksums, and representation tests.
+27. [Boot sequencing](boot-sequencing.md) — safe output levels, reset and power
+   order, device probes, USB policy, and watchdog startup.
 
 ## Reference
 
