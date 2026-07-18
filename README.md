@@ -114,6 +114,7 @@ The maintained documentation is organized by workflow and peripheral:
 - [Protocol framing](Docs/protocol-framing.md)
 - [Boot sequencing](Docs/boot-sequencing.md)
 - [Memory discipline](Docs/memory-discipline.md)
+- [Build-cache hygiene](Docs/build-cache-hygiene.md)
 - [Hardware guide](Docs/hardware-guide.md)
 - [USB serial and UART](Docs/serial-and-uart.md)
 - [PWM, ADC, I2C, and SPI](Docs/buses-and-analog.md)

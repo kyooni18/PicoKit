@@ -90,6 +90,8 @@ the decisions and failure modes that a declaration alone cannot express.
    order, device probes, USB policy, and watchdog startup.
 28. [Memory discipline](memory-discipline.md) — interrupt allocation rules,
    reusable buffers, DMA and C pointer lifetimes, and diagnostic cost.
+29. [Build-cache hygiene](build-cache-hygiene.md) — SwiftPM, CMake, generated,
+   and SDK caches, diagnosis, safe cleaning, and artifact comparison.
 
 ## Reference
 
