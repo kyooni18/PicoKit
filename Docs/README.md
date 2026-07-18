@@ -69,6 +69,8 @@ the decisions and failure modes that a declaration alone cannot express.
    timeouts, application budgets, watchdog windows, and host timing limits.
 18. [Peripheral recovery](peripheral-recovery.md) — typed failure policy,
    bounded retries, reset sequencing, safe outputs, and bus resynchronization.
+19. [Release readiness](release-readiness.md) — reproducible inputs, board
+   matrix gates, artifact identity, and evidence-accurate release claims.
 
 ## Reference
 

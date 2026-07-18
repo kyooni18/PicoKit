@@ -104,6 +104,7 @@ The maintained documentation is organized by workflow and peripheral:
 - [Peripheral pin validation](Docs/peripheral-pin-validation.md)
 - [Timing and deadlines](Docs/timing-and-deadlines.md)
 - [Peripheral recovery](Docs/peripheral-recovery.md)
+- [Release readiness](Docs/release-readiness.md)
 - [Hardware guide](Docs/hardware-guide.md)
 - [USB serial and UART](Docs/serial-and-uart.md)
 - [PWM, ADC, I2C, and SPI](Docs/buses-and-analog.md)
