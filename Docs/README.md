@@ -45,6 +45,8 @@ the decisions and failure modes that a declaration alone cannot express.
    method, DMA interpretation, and physical validation.
 6. [Failure diagnosis](failure-diagnosis.md) — classify configuration, build,
    flash, USB, and peripheral failures by the strongest available evidence.
+7. [DMA and buffer lifecycle](dma-and-buffer-lifecycle.md) — synchronous
+   prepared-buffer transfers, channel ownership, timeout cleanup, and sizing.
 
 ## Reference
 
