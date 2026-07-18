@@ -1,0 +1,4 @@
+module CppInterop {
+  header "CppInterop.h"
+  export *
+}

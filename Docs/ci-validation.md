@@ -54,6 +54,7 @@ SwiftPico checkout. Its gates are intentionally layered:
 | `product-name.sh` | generated product naming and artifact paths |
 | `usb-disabled.sh` | firmware without USB CDC |
 | `usb-serial-status-firmware.sh` | disconnected/connected USB status and raw-byte fixture image |
+| `cpp-interop.sh` | C++ class behind a C ABI, Clang module import, and linked firmware symbol |
 | `generated-project.sh` for four boards | generated build, fake flash, and artifact checks |
 | `performance-firmware.sh` | firmware benchmark fixture contract |
 | `riscv-firmware.sh` | RP2350 RISC-V firmware path |
@@ -86,6 +87,7 @@ sh Tests/integration/generated-templates.sh
 sh Tests/integration/generated-blink.sh
 PICO_TEST_BOARD=pico2_w sh Tests/integration/generated-project.sh
 sh Tests/integration/usb-serial-status-firmware.sh
+sh Tests/integration/cpp-interop.sh
 ```
 
 If a gate depends on the SwiftPico checkout or a toolchain cache, preserve the
