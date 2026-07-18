@@ -61,6 +61,8 @@ the decisions and failure modes that a declaration alone cannot express.
    USB-echo, and physical-peripheral evidence with safety boundaries.
 14. [Typed API and errors](typed-api-and-errors.md) — board identity, validated
    pins, explicit units, failure categories, and API-level choice.
+15. [Driver testing](driver-testing.md) — injected GPIO fakes, typed failures,
+   serial buffering, host-only seams, and evidence boundaries.
 
 ## Reference
 
