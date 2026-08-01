@@ -41,7 +41,10 @@ public final class PicoI2C {
       self.instance = instance
       self.actualFrequency = try Frequency.hertz(actualFrequency)
     #else
-      throw PicoKitError.unavailable("Pico SDK bridge")
+      // Keep a validated, side-effect-free host representation so SourceKit,
+      // host tests, and composed-operation validation can run without the SDK.
+      self.instance = instance
+      self.actualFrequency = frequency
     #endif
   }
 
@@ -524,7 +527,8 @@ public final class PicoSPI {
       var received = [UInt8](repeating: 0, count: bytes.count)
       let status = bytes.withUnsafeBufferPointer { tx in
         received.withUnsafeMutableBufferPointer { rx in
-          picokit_spi_transfer_dma(instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count)
+          picokit_spi_transfer_dma(
+            instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count)
         }
       }
       if status == -3 {
@@ -552,7 +556,8 @@ public final class PicoSPI {
       let status = bytes.withUnsafeBufferPointer { tx in
         received.withUnsafeMutableBufferPointer { rx in
           picokit_spi_transfer_dma_timeout(
-            instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count, timeout.microseconds)
+            instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count,
+            timeout.microseconds)
         }
       }
       if status == -2 { throw PicoKitError.timedOut(operation: "SPI 8-bit DMA transfer") }
@@ -632,7 +637,8 @@ public final class PicoSPI {
       var received = [UInt16](repeating: 0, count: words.count)
       let status = words.withUnsafeBufferPointer { tx in
         received.withUnsafeMutableBufferPointer { rx in
-          picokit_spi_transfer16_dma(instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count)
+          picokit_spi_transfer16_dma(
+            instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count)
         }
       }
       if status == -3 {
@@ -659,7 +665,8 @@ public final class PicoSPI {
       let status = words.withUnsafeBufferPointer { tx in
         received.withUnsafeMutableBufferPointer { rx in
           picokit_spi_transfer16_dma_timeout(
-            instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count, timeout.microseconds)
+            instance.rawValue, dmaOwnerToken, tx.baseAddress, rx.baseAddress, count,
+            timeout.microseconds)
         }
       }
       if status == -2 { throw PicoKitError.timedOut(operation: "SPI 16-bit DMA transfer") }
