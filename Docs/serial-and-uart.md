@@ -35,6 +35,11 @@ while true {
 }
 ```
 
+For packet-oriented code, `USBSerial.read(upToCount:)` drains available bytes
+without waiting. `USBSerial.read(count:timeout:)` waits for exactly the
+requested count and reports a partial read when the deadline expires. The
+non-throwing `Serial.read(upToCount:)` convenience method is also nonblocking.
+
 `Serial.available` checks for a byte without consuming it. PicoKit retains one
 lookahead byte internally so `available` followed by `read()` does not lose
 data. Both calls are nonblocking.
@@ -118,6 +123,57 @@ let sent = try uart.write(
 )
 let byte = try uart.read(timeout: .milliseconds(100))
 ```
+
+Select the complete line format at construction time:
+
+```swift
+let uart = try PicoUART(
+    .uart1,
+    configuration: UARTConfiguration(
+        baudRate: .hertz(9_600),
+        dataBits: .seven,
+        parity: .even,
+        stopBits: .two,
+        flowControl: .none
+    ),
+    tx: .gpio4,
+    rx: .gpio5
+)
+```
+
+`UARTDataBits` supports 5...8 bits, `UARTParity` supports none/even/odd,
+`UARTStopBits` supports one/two, and `UARTFlowControl.hardware` enables CTS
+and RTS in the RP UART. The flow-control pins must also be wired and muxed
+according to the board design.
+
+`PicoUART` claims its controller and TX/RX pins atomically. A second instance
+using the controller or either pin throws `ownershipConflict`. Call `close()`
+for a deterministic handoff; deinitialization is fallback cleanup. Once
+closed, I/O methods fail with an unavailable error.
+
+RX status bits are accumulated while bytes are read:
+
+```swift
+let stats = uart.statistics
+print(stats.rxOverflow, stats.framingErrors, stats.parityErrors)
+try uart.resetStatistics()
+```
+
+The counters are diagnostic snapshots. A byte carrying a framing or parity
+flag is still returned so the protocol can reject or resynchronize it.
+
+## USB-to-UART bridge
+
+`SerialBridge` forwards bounded raw-byte chunks in both directions:
+
+```swift
+let uart = try PicoUART(.uart0, baudRate: .hertz(115_200), tx: .gpio0, rx: .gpio1)
+let bridge = try SerialBridge(uart: uart)
+try bridge.run()
+```
+
+Use `pump()` when the application needs to share its foreground loop with
+other work. The bridge does not add framing or line conversion.
 
 `actualBaudRate` reports the SDK-selected rate after divider quantization. A
 bounded write returns its full count on success. If the deadline expires after

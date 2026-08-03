@@ -156,6 +156,8 @@ final class USBSerial {
     func write(_ bytes: [UInt8]) throws
     func read() throws -> UInt8?
     func read(timeout: Duration) throws -> UInt8
+    func read(upToCount count: Int) throws -> [UInt8]
+    func read(count: Int, timeout: Duration) throws -> [UInt8]
 }
 
 final class PicoSerial {
@@ -168,6 +170,7 @@ final class PicoSerial {
     func println(_ text: String = "")
     var available: Bool { get }
     func read() -> UInt8?
+    func read(upToCount count: Int) -> [UInt8]
 }
 
 let Serial: PicoSerial
@@ -194,18 +197,47 @@ For hosts that enumerate CDC without asserting DTR, set
 ```swift
 enum UARTInstance: UInt32 { case uart0, uart1 }
 
+enum UARTDataBits: UInt32 { case five = 5, six = 6, seven = 7, eight = 8 }
+enum UARTParity: UInt32 { case none, even, odd }
+enum UARTStopBits: UInt32 { case one = 1, two = 2 }
+enum UARTFlowControl: UInt32 { case none, hardware }
+
+struct UARTConfiguration {
+    let baudRate: Frequency
+    let dataBits: UARTDataBits
+    let parity: UARTParity
+    let stopBits: UARTStopBits
+    let flowControl: UARTFlowControl
+}
+
+struct UARTStatistics {
+    let rxOverflow: UInt64
+    let framingErrors: UInt64
+    let parityErrors: UInt64
+}
+
 final class PicoUART {
     init(_ instance: UARTInstance, baudRate: Frequency, tx: PicoPin, rx: PicoPin,
          chip: PicoChip = .compiled) throws
+    init(_ instance: UARTInstance, configuration: UARTConfiguration,
+         tx: PicoPin, rx: PicoPin, chip: PicoChip = .compiled) throws
     let instance: UARTInstance
     let chip: PicoChip
     let actualBaudRate: Frequency
+    let configuration: UARTConfiguration
+    let tx: PicoPin
+    let rx: PicoPin
+    func close()
+    var statistics: UARTStatistics { get }
+    func resetStatistics() throws
     func write(_ bytes: [UInt8], timeout: Duration) throws -> Int
     func writeDMA(_ bytes: [UInt8]) throws
     func writeDMA(_ bytes: [UInt8], timeout: Duration) throws
     func releaseDMAChannel()
     func read() throws -> UInt8?
     func read(timeout: Duration) throws -> UInt8
+    func read(upToCount count: Int) throws -> [UInt8]
+    func read(count: Int, timeout: Duration) throws -> [UInt8]
 }
 
 enum PWMChannel { case a, b }

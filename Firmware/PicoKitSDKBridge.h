@@ -15,18 +15,31 @@ enum {
     PICOKIT_STDIO_STATUS_INVALID_ARGUMENT = -1,
     PICOKIT_STDIO_STATUS_DISCONNECTED = -2,
     PICOKIT_STDIO_STATUS_NO_DATA = -3,
+    PICOKIT_STDIO_STATUS_TIMEOUT = -4,
 };
 int32_t picokit_stdio_write(const char *text);
 int32_t picokit_stdio_write_line(const char *text);
 int32_t picokit_stdio_write_byte(uint8_t byte);
 int32_t picokit_stdio_write_bytes(const uint8_t *bytes, uint32_t count);
 int32_t picokit_stdio_read(uint8_t *byte, uint64_t timeout_us);
+int32_t picokit_stdio_read_bytes(uint8_t *bytes, uint32_t count, uint64_t timeout_us);
 int32_t picokit_uart_init(uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx);
 int32_t picokit_uart_init_with_actual_baud_rate(uint32_t instance, uint32_t baud_rate,
                                                 uint32_t tx, uint32_t rx,
                                                 uint32_t *actual_baud_rate);
+int32_t picokit_uart_init_configured(
+    uint32_t instance, uint32_t owner, uint32_t baud_rate, uint32_t tx, uint32_t rx,
+    uint32_t data_bits, uint32_t stop_bits, uint32_t parity, uint32_t flow_control,
+    uint32_t *actual_baud_rate);
+void picokit_uart_close(uint32_t instance, uint32_t owner, uint32_t tx, uint32_t rx);
 int32_t picokit_uart_write(uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us);
 int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us);
+int32_t picokit_uart_read_bytes(uint32_t instance, uint32_t owner, uint8_t *bytes,
+                                uint32_t count, uint64_t timeout_us);
+void picokit_uart_get_statistics(uint32_t instance, uint32_t owner,
+                                 uint64_t *rx_overflow, uint64_t *framing_errors,
+                                 uint64_t *parity_errors);
+void picokit_uart_reset_statistics(uint32_t instance, uint32_t owner);
 uint32_t picokit_dma_owner_token(void);
 void picokit_uart_dma_release(uint32_t instance, uint32_t owner);
 uint32_t picokit_compiled_chip(void);

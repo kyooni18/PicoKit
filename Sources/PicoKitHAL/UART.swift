@@ -6,6 +6,60 @@
 
 public enum UARTInstance: UInt32, Sendable { case uart0, uart1 }
 
+public enum UARTDataBits: UInt32, CaseIterable, Sendable {
+  case five = 5
+  case six = 6
+  case seven = 7
+  case eight = 8
+}
+
+public enum UARTParity: UInt32, CaseIterable, Sendable {
+  case none, even, odd
+}
+
+public enum UARTStopBits: UInt32, CaseIterable, Sendable {
+  case one = 1
+  case two = 2
+}
+
+public enum UARTFlowControl: UInt32, CaseIterable, Sendable {
+  case none, hardware
+}
+
+public struct UARTConfiguration: Sendable, Equatable {
+  public let baudRate: Frequency
+  public let dataBits: UARTDataBits
+  public let parity: UARTParity
+  public let stopBits: UARTStopBits
+  public let flowControl: UARTFlowControl
+
+  public init(
+    baudRate: Frequency,
+    dataBits: UARTDataBits = .eight,
+    parity: UARTParity = .none,
+    stopBits: UARTStopBits = .one,
+    flowControl: UARTFlowControl = .none
+  ) {
+    self.baudRate = baudRate
+    self.dataBits = dataBits
+    self.parity = parity
+    self.stopBits = stopBits
+    self.flowControl = flowControl
+  }
+}
+
+public struct UARTStatistics: Sendable, Equatable {
+  public let rxOverflow: UInt64
+  public let framingErrors: UInt64
+  public let parityErrors: UInt64
+
+  public init(rxOverflow: UInt64 = 0, framingErrors: UInt64 = 0, parityErrors: UInt64 = 0) {
+    self.rxOverflow = rxOverflow
+    self.framingErrors = framingErrors
+    self.parityErrors = parityErrors
+  }
+}
+
 extension UARTInstance {
   fileprivate func validate(tx: PicoPin, rx: PicoPin, chip: PicoChip) throws(PicoKitError) {
     guard tx != rx else {
@@ -39,19 +93,43 @@ extension UARTInstance {
 public final class PicoUART {
   public let instance: UARTInstance
   public let chip: PicoChip
+  public let tx: PicoPin
+  public let rx: PicoPin
+  public let configuration: UARTConfiguration
   private let dmaOwnerToken: UInt32
+  private let ownerToken: UInt32
+  private var isClosed = false
   /// The baud rate actually selected by the SDK.
   public let actualBaudRate: Frequency
 
-  deinit {
-    #if PICOKIT_PICO_SDK
-      picokit_uart_dma_release(instance.rawValue, dmaOwnerToken)
-    #endif
+  deinit { close() }
+
+  public convenience init(
+    _ instance: UARTInstance,
+    baudRate: Frequency,
+    tx: PicoPin,
+    rx: PicoPin,
+    dataBits: UARTDataBits = .eight,
+    parity: UARTParity = .none,
+    stopBits: UARTStopBits = .one,
+    flowControl: UARTFlowControl = .none,
+    chip: PicoChip = .compiled
+  ) throws(PicoKitError) {
+    try self.init(
+      instance,
+      configuration: UARTConfiguration(
+        baudRate: baudRate, dataBits: dataBits, parity: parity,
+        stopBits: stopBits, flowControl: flowControl
+      ),
+      tx: tx,
+      rx: rx,
+      chip: chip
+    )
   }
 
   public init(
     _ instance: UARTInstance,
-    baudRate: Frequency,
+    configuration: UARTConfiguration,
     tx: PicoPin,
     rx: PicoPin,
     chip: PicoChip = .compiled
@@ -62,23 +140,78 @@ public final class PicoUART {
       guard chip == compiledChip else {
         throw PicoKitError.unavailable("UART chip does not match compiled Pico chip")
       }
+      let ownerToken = picokit_dma_owner_token()
       var actualBaudRate: UInt32 = 0
-      let status = picokit_uart_init_with_actual_baud_rate(
-        instance.rawValue, baudRate.hertz, tx.rawValue, rx.rawValue, &actualBaudRate
+      let status = picokit_uart_init_configured(
+        instance.rawValue,
+        ownerToken,
+        configuration.baudRate.hertz,
+        tx.rawValue,
+        rx.rawValue,
+        configuration.dataBits.rawValue,
+        configuration.stopBits.rawValue,
+        configuration.parity.rawValue,
+        configuration.flowControl.rawValue,
+        &actualBaudRate
       )
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("UART instance or pins are owned by another PicoUART")
+      }
       guard status == 0 else {
         throw PicoKitError.ioFailure(operation: "UART setup", status: status)
       }
       self.instance = instance
       self.chip = chip
-      self.dmaOwnerToken = picokit_dma_owner_token()
+      self.tx = tx
+      self.rx = rx
+      self.configuration = configuration
+      self.ownerToken = ownerToken
+      self.dmaOwnerToken = ownerToken
       self.actualBaudRate = try Frequency.hertz(actualBaudRate)
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
   }
 
+  private func ensureOpen(operation: String) throws(PicoKitError) {
+    guard !isClosed else { throw PicoKitError.unavailable("UART is closed: \(operation)") }
+  }
+
+  public func close() {
+    guard !isClosed else { return }
+    isClosed = true
+    #if PICOKIT_PICO_SDK
+      picokit_uart_dma_release(instance.rawValue, dmaOwnerToken)
+      picokit_uart_close(instance.rawValue, ownerToken, tx.rawValue, rx.rawValue)
+    #endif
+  }
+
+  public var statistics: UARTStatistics {
+    guard !isClosed else { return UARTStatistics() }
+    #if PICOKIT_PICO_SDK
+      var overflow: UInt64 = 0
+      var framing: UInt64 = 0
+      var parity: UInt64 = 0
+      picokit_uart_get_statistics(
+        instance.rawValue, ownerToken, &overflow, &framing, &parity
+      )
+      return UARTStatistics(
+        rxOverflow: overflow, framingErrors: framing, parityErrors: parity
+      )
+    #else
+      return UARTStatistics()
+    #endif
+  }
+
+  public func resetStatistics() throws(PicoKitError) {
+    try ensureOpen(operation: "reset statistics")
+    #if PICOKIT_PICO_SDK
+      picokit_uart_reset_statistics(instance.rawValue, ownerToken)
+    #endif
+  }
+
   public func write(_ bytes: [UInt8], timeout: Duration) throws(PicoKitError) -> Int {
+    try ensureOpen(operation: "write")
     let count = try picoKitTransferCount(bytes.count, operation: "UART write")
     #if PICOKIT_PICO_SDK
       let result = bytes.withUnsafeBufferPointer {
@@ -103,6 +236,7 @@ public final class PicoUART {
   /// enter the UART FIFO. It has no timeout; use `write(_:timeout:)` when a
   /// bounded control-path operation is required.
   public func writeDMA(_ bytes: [UInt8]) throws(PicoKitError) {
+    try ensureOpen(operation: "DMA write")
     let count = try picoKitTransferCount(bytes.count, operation: "UART DMA write")
     #if PICOKIT_PICO_SDK
       let status = bytes.withUnsafeBufferPointer {
@@ -120,9 +254,9 @@ public final class PicoUART {
   }
 
   /// Writes a prepared buffer through DMA with a bounded wait for the DMA
-  /// channel to finish. A timeout aborts the channel before this method
-  /// returns, so the caller may safely release its buffer.
+  /// channel to finish. A timeout aborts the channel before this method returns.
   public func writeDMA(_ bytes: [UInt8], timeout: Duration) throws(PicoKitError) {
+    try ensureOpen(operation: "DMA write")
     let count = try picoKitTransferCount(bytes.count, operation: "UART DMA write")
     #if PICOKIT_PICO_SDK
       let status = bytes.withUnsafeBufferPointer {
@@ -146,41 +280,69 @@ public final class PicoUART {
     #endif
   }
 
-  /// Releases the DMA channel retained by `writeDMA(_:)`. PicoKit reuses the
-  /// channel between writes to avoid repeated resource-claim overhead.
   public func releaseDMAChannel() {
+    guard !isClosed else { return }
     #if PICOKIT_PICO_SDK
       picokit_uart_dma_release(instance.rawValue, dmaOwnerToken)
     #endif
   }
 
-  /// Returns one received byte without waiting, or `nil` when the RX FIFO is
-  /// empty. Use `read(timeout:)` when the caller must wait for input.
-  public func read() throws(PicoKitError) -> UInt8? {
+  /// Returns all bytes currently waiting in the RX FIFO, up to `count`.
+  public func read(upToCount count: Int) throws(PicoKitError) -> [UInt8] {
+    try ensureOpen(operation: "read")
+    let transferCount = try picoKitTransferCount(count, operation: "UART read")
+    guard transferCount != 0 else { return [] }
     #if PICOKIT_PICO_SDK
-      var byte: UInt8 = 0
-      let result = picokit_uart_read(instance.rawValue, &byte, 0)
-      if result == -2 { return nil }
-      guard result == 0 else {
-        throw PicoKitError.ioFailure(operation: "UART read", status: result)
+      var received = [UInt8](repeating: 0, count: count)
+      let status = received.withUnsafeMutableBufferPointer {
+        picokit_uart_read_bytes(instance.rawValue, ownerToken, $0.baseAddress, transferCount, 0)
       }
-      return byte
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("UART is owned by another PicoUART")
+      }
+      guard status >= 0 else {
+        throw PicoKitError.ioFailure(operation: "UART read", status: status)
+      }
+      return Array(received.prefix(Int(status)))
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
   }
 
-  public func read(timeout: Duration) throws(PicoKitError) -> UInt8 {
+  /// Reads exactly `count` bytes, applying the timeout to the complete read.
+  public func read(count: Int, timeout: Duration) throws(PicoKitError) -> [UInt8] {
+    try ensureOpen(operation: "read")
+    let transferCount = try picoKitTransferCount(count, operation: "UART read")
+    guard transferCount != 0 else { return [] }
     #if PICOKIT_PICO_SDK
-      var byte: UInt8 = 0
-      let result = picokit_uart_read(instance.rawValue, &byte, timeout.microseconds)
-      if result == -2 { throw PicoKitError.timedOut(operation: "UART read") }
-      guard result == 0 else {
-        throw PicoKitError.ioFailure(operation: "UART read", status: result)
+      var received = [UInt8](repeating: 0, count: count)
+      let status = received.withUnsafeMutableBufferPointer {
+        picokit_uart_read_bytes(
+          instance.rawValue, ownerToken, $0.baseAddress, transferCount, timeout.microseconds)
       }
-      return byte
+      if status == -2 { throw PicoKitError.timedOut(operation: "UART read") }
+      if status == -3 {
+        throw PicoKitError.ownershipConflict("UART is owned by another PicoUART")
+      }
+      if status >= 0 && status != Int32(count) {
+        throw PicoKitError.partialTransfer(
+          operation: "UART read", transferred: Int(status), expected: count
+        )
+      }
+      guard status == Int32(count) else {
+        throw PicoKitError.ioFailure(operation: "UART read", status: status)
+      }
+      return received
     #else
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
+  }
+
+  public func read() throws(PicoKitError) -> UInt8? {
+    try read(upToCount: 1).first
+  }
+
+  public func read(timeout: Duration) throws(PicoKitError) -> UInt8 {
+    try read(count: 1, timeout: timeout)[0]
   }
 }

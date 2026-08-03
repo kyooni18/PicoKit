@@ -132,6 +132,57 @@ public final class USBSerial {
       throw PicoKitError.unavailable("Pico SDK bridge")
     #endif
   }
+
+  /// Returns bytes currently waiting in the USB CDC RX queue, up to `count`.
+  /// This is a nonblocking poll and may return fewer bytes than requested.
+  public func read(upToCount count: Int) throws(PicoKitError) -> [UInt8] {
+    let transferCount = try picoKitTransferCount(count, operation: "USB serial read")
+    guard transferCount != 0 else { return [] }
+    #if PICOKIT_PICO_SDK
+      var received = [UInt8](repeating: 0, count: count)
+      let status = received.withUnsafeMutableBufferPointer {
+        picokit_stdio_read_bytes($0.baseAddress, transferCount, 0)
+      }
+      if let error = picoKitSerialReadError(status: status, operation: "USB serial read") {
+        throw error
+      }
+      guard status >= 0 else {
+        throw PicoKitError.ioFailure(operation: "USB serial read", status: status)
+      }
+      return Array(received.prefix(Int(status)))
+    #else
+      throw PicoKitError.unavailable("Pico SDK bridge")
+    #endif
+  }
+
+  /// Reads exactly `count` bytes, applying the timeout to the complete read.
+  public func read(count: Int, timeout: Duration) throws(PicoKitError) -> [UInt8] {
+    let transferCount = try picoKitTransferCount(count, operation: "USB serial read")
+    guard transferCount != 0 else { return [] }
+    #if PICOKIT_PICO_SDK
+      var received = [UInt8](repeating: 0, count: count)
+      let status = received.withUnsafeMutableBufferPointer {
+        picokit_stdio_read_bytes($0.baseAddress, transferCount, timeout.microseconds)
+      }
+      if status == PICOKIT_STDIO_STATUS_TIMEOUT {
+        throw PicoKitError.timedOut(operation: "USB serial read")
+      }
+      if let error = picoKitSerialReadError(status: status, operation: "USB serial read") {
+        throw error
+      }
+      if status >= 0 && status != Int32(count) {
+        throw PicoKitError.partialTransfer(
+          operation: "USB serial read", transferred: Int(status), expected: count
+        )
+      }
+      guard status == Int32(count) else {
+        throw PicoKitError.ioFailure(operation: "USB serial read", status: status)
+      }
+      return received
+    #else
+      throw PicoKitError.unavailable("Pico SDK bridge")
+    #endif
+  }
 }
 
 #if PICOKIT_PICO_SDK
@@ -185,6 +236,39 @@ public final class USBSerial {
       bytes.withUnsafeBufferPointer {
         _ = picokit_stdio_write_bytes($0.baseAddress, UInt32($0.count))
       }
+    }
+
+    /// Returns bytes currently waiting in the USB CDC RX queue, up to `count`.
+    /// A pending lookahead byte retained by `available` is returned first.
+    @inline(__always)
+    public func read(upToCount count: Int) -> [UInt8] {
+      guard count >= 0 else { preconditionFailure("USB serial read count is negative") }
+      guard count != 0 else { return [] }
+      var received: [UInt8] = []
+      received.reserveCapacity(count)
+      if let pendingByte {
+        received.append(pendingByte)
+        self.pendingByte = nil
+      }
+      guard received.count < count else { return received }
+      #if PICOKIT_PICO_SDK
+        initializeIfNeeded()
+        var buffer = [UInt8](repeating: 0, count: count - received.count)
+        let status = buffer.withUnsafeMutableBufferPointer {
+          picokit_stdio_read_bytes($0.baseAddress, UInt32($0.count), 0)
+        }
+        if status >= 0 {
+          received.append(contentsOf: buffer.prefix(Int(status)))
+        } else if status != PICOKIT_STDIO_STATUS_NO_DATA
+          && status != PICOKIT_STDIO_STATUS_DISCONNECTED
+        {
+          preconditionFailure("USB serial bulk read failed: \(status)")
+        }
+      #else
+        received.append(
+          contentsOf: picoKitUnchecked { try backend.read(upToCount: count - received.count) })
+      #endif
+      return received
     }
 
     @inline(__always)
@@ -292,6 +376,7 @@ public final class USBSerial {
     func write(_ text: String) throws(PicoKitError)
     func write(_ bytes: [UInt8]) throws(PicoKitError)
     func read() throws(PicoKitError) -> UInt8?
+    func read(upToCount count: Int) throws(PicoKitError) -> [UInt8]
   }
 
   private final class SDKSerialBackend: PicoSerialBackend {
@@ -305,6 +390,9 @@ public final class USBSerial {
     func write(_ text: String) throws(PicoKitError) { try usb.write(text) }
     func write(_ bytes: [UInt8]) throws(PicoKitError) { try usb.write(bytes) }
     func read() throws(PicoKitError) -> UInt8? { try usb.read() }
+    func read(upToCount count: Int) throws(PicoKitError) -> [UInt8] {
+      try usb.read(upToCount: count)
+    }
   }
 
   /// Convert a low-level failure into a firmware trap for the convenience API.
@@ -346,6 +434,24 @@ public final class USBSerial {
 
     public func write(_ byte: UInt8) {
       write([byte])
+    }
+
+    /// Returns bytes currently waiting in the USB CDC RX queue, up to `count`.
+    public func read(upToCount count: Int) -> [UInt8] {
+      guard count >= 0 else { preconditionFailure("USB serial read count is negative") }
+      guard count != 0 else { return [] }
+      var received: [UInt8] = []
+      received.reserveCapacity(count)
+      if let pendingByte {
+        received.append(pendingByte)
+        self.pendingByte = nil
+      }
+      guard received.count < count else { return received }
+      received.append(
+        contentsOf: picoKitUnchecked {
+          try backend.read(upToCount: count - received.count)
+        })
+      return received
     }
 
     public func print(_ text: String) { write(text) }

@@ -56,6 +56,11 @@ static uint8_t picokit_pwm_slice_channel_claims[NUM_PWM_SLICES];
 static uint32_t picokit_stdio_initialization_state;
 static uint32_t picokit_status_led_initialization_state;
 static int picokit_uart_dma_channels[2] = {-1, -1};
+static uint32_t picokit_uart_owners[2];
+static uint32_t picokit_uart_pin_owners[PICOKIT_GPIO_COUNT];
+static uint64_t picokit_uart_rx_overflows[2];
+static uint64_t picokit_uart_framing_errors[2];
+static uint64_t picokit_uart_parity_errors[2];
 static int picokit_spi_dma_tx_channels[2] = {-1, -1};
 static int picokit_spi_dma_rx_channels[2] = {-1, -1};
 static uint32_t picokit_uart_dma_owners[2];
@@ -322,22 +327,76 @@ int32_t picokit_stdio_read(uint8_t *byte, uint64_t timeout_us) {
         if (timeout_us == 0 || picokit_expired(deadline)) return PICOKIT_STDIO_STATUS_NO_DATA;
     } while (true);
 }
+int32_t picokit_stdio_read_bytes(uint8_t *bytes, uint32_t count, uint64_t timeout_us) {
+    if ((!bytes && count) || !picokit_valid_result_count(count)) {
+        return PICOKIT_STDIO_STATUS_INVALID_ARGUMENT;
+    }
+    if (!count) return 0;
+    if (!picokit_stdio_connected()) return PICOKIT_STDIO_STATUS_DISCONNECTED;
+
+    const uint32_t poll_slice_us = 10000;
+    uint64_t deadline = picokit_deadline_after(timeout_us);
+    uint32_t transferred = 0;
+    while (transferred < count) {
+        if (!picokit_stdio_connected()) {
+            return transferred ? (int32_t)transferred : PICOKIT_STDIO_STATUS_DISCONNECTED;
+        }
+        uint64_t now = time_us_64();
+        uint64_t remaining = deadline > now ? deadline - now : 0;
+        uint32_t slice = remaining > poll_slice_us ? poll_slice_us : (uint32_t)remaining;
+        int result = stdio_getchar_timeout_us(slice);
+        if (result >= 0) {
+            bytes[transferred++] = (uint8_t)result;
+            continue;
+        }
+        if (result != PICO_ERROR_TIMEOUT && result != PICO_ERROR_NO_DATA) return result;
+        if (timeout_us == 0) break;
+        if (picokit_expired(deadline)) {
+            return transferred ? (int32_t)transferred : PICOKIT_STDIO_STATUS_TIMEOUT;
+        }
+    }
+    return (int32_t)transferred;
+}
 static uart_inst_t *picokit_uart(uint32_t instance) { return instance == 0 ? uart0 : instance == 1 ? uart1 : NULL; }
 static int32_t picokit_uart_init_impl(
-    uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx,
+    uint32_t instance, uint32_t owner, uint32_t baud_rate, uint32_t tx, uint32_t rx,
+    uint32_t data_bits, uint32_t stop_bits, uint32_t parity, uint32_t flow_control,
     uint32_t *actual_baud_rate_out
 ) {
     uart_inst_t *uart = picokit_uart(instance);
-    if (!uart || !baud_rate || !picokit_valid_gpio(tx) || !picokit_valid_gpio(rx) ||
+    if (!uart || !owner || !baud_rate || data_bits < 5u || data_bits > 8u ||
+        stop_bits < 1u || stop_bits > 2u || parity > 2u || flow_control > 1u ||
+        !picokit_valid_gpio(tx) || !picokit_valid_gpio(rx) ||
         !picokit_valid_uart_pins(instance, tx, rx)) return -1;
+    picokit_dma_prepare();
+    critical_section_enter_blocking(&picokit_uart_dma_critical_sections[instance]);
+    if (picokit_uart_owners[instance] != 0u ||
+        picokit_uart_pin_owners[tx] != 0u || picokit_uart_pin_owners[rx] != 0u) {
+        critical_section_exit(&picokit_uart_dma_critical_sections[instance]);
+        return -3;
+    }
+    picokit_uart_owners[instance] = owner;
+    picokit_uart_pin_owners[tx] = owner;
+    picokit_uart_pin_owners[rx] = owner;
+    picokit_uart_rx_overflows[instance] = 0;
+    picokit_uart_framing_errors[instance] = 0;
+    picokit_uart_parity_errors[instance] = 0;
     uint32_t actual_baud_rate = uart_init(uart, baud_rate);
     gpio_set_function(tx, UART_FUNCSEL_NUM(uart, tx));
     gpio_set_function(rx, UART_FUNCSEL_NUM(uart, rx));
+    uart_set_format(uart, data_bits, stop_bits,
+                    parity == 0u ? UART_PARITY_NONE :
+                    parity == 1u ? UART_PARITY_EVEN : UART_PARITY_ODD);
+    uart_set_hw_flow(uart, flow_control != 0u, flow_control != 0u);
     if (actual_baud_rate_out) *actual_baud_rate_out = actual_baud_rate;
+    critical_section_exit(&picokit_uart_dma_critical_sections[instance]);
     return 0;
 }
 int32_t picokit_uart_init(uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx) {
-    return picokit_uart_init_impl(instance, baud_rate, tx, rx, NULL);
+    return picokit_uart_init_impl(
+        instance, picokit_dma_owner_token(), baud_rate, tx, rx,
+        8u, 1u, 0u, 0u, NULL
+    );
 }
 int32_t picokit_uart_init_with_actual_baud_rate(
     uint32_t instance, uint32_t baud_rate, uint32_t tx, uint32_t rx,
@@ -345,8 +404,34 @@ int32_t picokit_uart_init_with_actual_baud_rate(
 ) {
     if (!actual_baud_rate_out) return -1;
     return picokit_uart_init_impl(
-        instance, baud_rate, tx, rx, actual_baud_rate_out
+        instance, picokit_dma_owner_token(), baud_rate, tx, rx,
+        8u, 1u, 0u, 0u, actual_baud_rate_out
     );
+}
+int32_t picokit_uart_init_configured(
+    uint32_t instance, uint32_t owner, uint32_t baud_rate, uint32_t tx, uint32_t rx,
+    uint32_t data_bits, uint32_t stop_bits, uint32_t parity, uint32_t flow_control,
+    uint32_t *actual_baud_rate_out
+) {
+    return picokit_uart_init_impl(
+        instance, owner, baud_rate, tx, rx, data_bits, stop_bits, parity,
+        flow_control, actual_baud_rate_out
+    );
+}
+void picokit_uart_close(uint32_t instance, uint32_t owner, uint32_t tx, uint32_t rx) {
+    if (instance > 1u || owner == 0u || !picokit_valid_gpio(tx) || !picokit_valid_gpio(rx)) return;
+    picokit_dma_prepare();
+    critical_section_enter_blocking(&picokit_uart_dma_critical_sections[instance]);
+    if (picokit_uart_owners[instance] == owner) {
+        uart_deinit(picokit_uart(instance));
+        if (picokit_uart_pin_owners[tx] == owner) picokit_uart_pin_owners[tx] = 0u;
+        if (picokit_uart_pin_owners[rx] == owner) picokit_uart_pin_owners[rx] = 0u;
+        picokit_uart_owners[instance] = 0u;
+        picokit_uart_rx_overflows[instance] = 0;
+        picokit_uart_framing_errors[instance] = 0;
+        picokit_uart_parity_errors[instance] = 0;
+    }
+    critical_section_exit(&picokit_uart_dma_critical_sections[instance]);
 }
 int32_t picokit_uart_write(uint32_t instance, const uint8_t *bytes, uint32_t count, uint64_t timeout_us) {
     uart_inst_t *uart = picokit_uart(instance);
@@ -458,7 +543,12 @@ void picokit_uart_dma_release(uint32_t instance, uint32_t owner) {
     }
     critical_section_exit(&picokit_uart_dma_critical_sections[instance]);
 }
-int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us) {
+static void picokit_uart_record_errors(uint32_t instance, uint32_t data_register) {
+    if (data_register & UART_UARTDR_OE_BITS) picokit_uart_rx_overflows[instance] += 1u;
+    if (data_register & UART_UARTDR_FE_BITS) picokit_uart_framing_errors[instance] += 1u;
+    if (data_register & UART_UARTDR_PE_BITS) picokit_uart_parity_errors[instance] += 1u;
+}
+static int32_t picokit_uart_read_one(uint32_t instance, uint8_t *byte, uint64_t timeout_us) {
     uart_inst_t *uart = picokit_uart(instance);
     if (!uart || !byte) return -1;
     uint64_t deadline = picokit_deadline_after(timeout_us);
@@ -466,8 +556,52 @@ int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us)
         if (picokit_expired(deadline)) return -2;
         tight_loop_contents();
     }
-    *byte = (uint8_t)uart_get_hw(uart)->dr;
+    uint32_t data_register = uart_get_hw(uart)->dr;
+    picokit_uart_record_errors(instance, data_register);
+    *byte = (uint8_t)data_register;
     return 0;
+}
+int32_t picokit_uart_read(uint32_t instance, uint8_t *byte, uint64_t timeout_us) {
+    return picokit_uart_read_one(instance, byte, timeout_us);
+}
+int32_t picokit_uart_read_bytes(
+    uint32_t instance, uint32_t owner, uint8_t *bytes, uint32_t count, uint64_t timeout_us
+) {
+    if (instance > 1u || owner == 0u || (!bytes && count) || !picokit_valid_result_count(count)) {
+        return -1;
+    }
+    if (picokit_uart_owners[instance] != owner) return -3;
+    uint64_t deadline = picokit_deadline_after(timeout_us);
+    uint32_t transferred = 0;
+    while (transferred < count) {
+        if (!uart_is_readable(picokit_uart(instance))) {
+            if (timeout_us == 0u) break;
+            if (picokit_expired(deadline)) {
+                return transferred ? (int32_t)transferred : -2;
+            }
+            tight_loop_contents();
+            continue;
+        }
+        int32_t status = picokit_uart_read_one(instance, &bytes[transferred], 0u);
+        if (status != 0) return status;
+        transferred += 1u;
+    }
+    return (int32_t)transferred;
+}
+void picokit_uart_get_statistics(
+    uint32_t instance, uint32_t owner, uint64_t *rx_overflow,
+    uint64_t *framing_errors, uint64_t *parity_errors
+) {
+    if (instance > 1u || owner == 0u || picokit_uart_owners[instance] != owner) return;
+    if (rx_overflow) *rx_overflow = picokit_uart_rx_overflows[instance];
+    if (framing_errors) *framing_errors = picokit_uart_framing_errors[instance];
+    if (parity_errors) *parity_errors = picokit_uart_parity_errors[instance];
+}
+void picokit_uart_reset_statistics(uint32_t instance, uint32_t owner) {
+    if (instance > 1u || owner == 0u || picokit_uart_owners[instance] != owner) return;
+    picokit_uart_rx_overflows[instance] = 0;
+    picokit_uart_framing_errors[instance] = 0;
+    picokit_uart_parity_errors[instance] = 0;
 }
 uint32_t picokit_compiled_chip(void) {
 #if PICO_RP2040
